@@ -1,0 +1,1457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Label Drift</title>
+<meta name="description" content="Field capture for the allergen label staleness study.">
+<meta name="theme-color" content="#131614">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Label Drift">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700;800;900&family=Red+Hat+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+:root {
+  --ground: #EDF0EE;
+  --surface: #FFFFFF;
+  --ink: #131614;
+  --muted: #59625D;
+  --line: #CBD2CE;
+  --accent: #0C5A8C;
+  --accent-soft: #E0ECF4;
+  --on-ink: #FFFFFF;
+  --ok: #1A7040;
+  --ok-soft: #DCEFE2;
+  --warn: #8C5400;
+  --warn-soft: #F7EAD2;
+  --bad: #B0261D;
+  --bad-soft: #F8E0DC;
+  --sans: "Libre Franklin", "Franklin Gothic Medium", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Red Hat Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --radius: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0C0F0D; --surface: #151917; --ink: #E5E9E6; --muted: #98A19C; --line: #2B3330;
+    --accent: #78BAE6; --accent-soft: #13283A; --on-ink: #0C0F0D;
+    --ok: #74CF94; --ok-soft: #12291B; --warn: #EBB25B; --warn-soft: #2C2211; --bad: #FF8B7E; --bad-soft: #331513;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 16px/1.45 var(--sans);
+  padding-inline: max(16px, env(safe-area-inset-left));
+  padding-block: max(10px, env(safe-area-inset-top)) 72px;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 36rem; margin-inline: auto; display: grid; gap: 14px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { text-wrap: balance; }
+button, select { font: inherit; color: inherit; }
+
+/* Masthead ------------------------------------------------------------ */
+.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-block: 6px 0; }
+.top h1 { margin: 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1; }
+.top p { margin: 4px 0 0; font-size: 0.8125rem; color: var(--muted); }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 0.75rem; font-weight: 600; padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface); white-space: nowrap;
+}
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.chip[data-tone="ok"]::before { background: var(--ok); }
+.chip[data-tone="warn"]::before { background: var(--warn); }
+.chip[data-tone="bad"]::before { background: var(--bad); }
+
+/* Cards, fields ---------------------------------------------------------- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 12px; display: grid; gap: 14px; }
+.card > h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; }
+.field { display: grid; gap: 4px; font-size: 0.8125rem; font-weight: 600; }
+.text-input, textarea, select.text-input {
+  width: 100%; font-size: 1rem; font-weight: 400; color: var(--ink);
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--ground);
+  min-height: 44px;
+}
+textarea { resize: vertical; min-height: 64px; font: inherit; }
+.code-input { font-family: var(--mono); font-size: 1.25rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.hint { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+.status { margin: 0; font-size: 0.8125rem; line-height: 1.35; color: var(--muted); }
+.status[data-tone="ok"] { color: var(--ok); }
+.status[data-tone="warn"] { color: var(--warn); }
+.status[data-tone="bad"] { color: var(--bad); }
+.notice { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); font-size: 0.875rem; }
+.notice strong { color: var(--warn); }
+
+.seg { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.seg legend { width: 100%; padding: 0 0 4px; font-size: 0.8125rem; font-weight: 600; }
+.seg label { position: relative; }
+.seg span {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 6px 14px;
+  border: 1px solid var(--line); border-radius: 999px; font-size: 0.875rem; font-weight: 600; cursor: pointer;
+}
+.seg input:checked + span { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.seg input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.btn { min-height: 48px; padding: 10px 18px; border-radius: var(--radius); border: 1px solid var(--ink); font-weight: 700; font-size: 1rem; cursor: pointer; }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn-primary { background: var(--ink); color: var(--on-ink); }
+.btn-quiet { background: transparent; border-color: var(--line); color: var(--ink); }
+.actions { display: flex; gap: 8px; }
+.actions .btn-primary { flex: 1; }
+.protocol { margin: 0; font-size: 0.75rem; color: var(--muted); }
+
+/* Session ------------------------------------------------------------- */
+.session { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.session summary {
+  list-style: none; cursor: pointer; min-height: 48px; padding: 8px 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.session summary::-webkit-details-marker { display: none; }
+.session summary .edit { font-size: 0.8125rem; font-weight: 600; color: var(--accent); }
+.session[open] summary .edit { visibility: hidden; }
+.eyebrow { display: block; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.session-summary { font-weight: 600; font-size: 0.9375rem; }
+.session-summary[data-empty="true"] { color: var(--bad); }
+.session-body { display: grid; gap: 12px; padding: 0 12px 12px; }
+.new-store { display: grid; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: var(--radius); }
+
+/* Study Facts panel — set like a Nutrition Facts label ---------------- */
+.facts { background: var(--surface); border: 2px solid var(--ink); padding: 4px 10px 8px; }
+.facts h2 { margin: 0; font-size: 2.25rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.05; }
+.facts .line {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  border-top: 1px solid var(--ink); padding-block: 3px; font-size: 0.875rem;
+}
+.facts .line.plain { border-top: 0; }
+.facts .rule-heavy { height: 10px; background: var(--ink); margin-block: 2px; }
+.facts .rule-mid { height: 5px; background: var(--ink); margin-block: 2px; }
+.facts .big { display: flex; justify-content: space-between; align-items: flex-end; padding-block: 0 2px; }
+.facts .big strong { font-size: 1.375rem; font-weight: 900; }
+.facts .big .num { font-family: var(--sans); font-size: 2.5rem; font-weight: 900; line-height: 1; }
+.facts .dv { justify-content: flex-end; font-size: 0.75rem; font-weight: 800; }
+.facts .stratum { display: grid; grid-template-columns: minmax(0, 1fr) auto 3.25rem; gap: 10px; }
+.facts .stratum .num { font-size: 0.8125rem; color: var(--muted); }
+.facts .stratum strong { text-align: right; font-weight: 800; }
+.facts .indent { padding-left: 16px; }
+.facts .foot { margin: 4px 0 0; padding-top: 4px; border-top: 5px solid var(--ink); font-size: 0.6875rem; line-height: 1.35; color: var(--muted); }
+
+/* Capture form -------------------------------------------------------- */
+.step { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; }
+.step-title { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0; font-size: 1rem; font-weight: 800; }
+.step-n {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; flex: none;
+  border-radius: 50%; background: var(--ink); color: var(--on-ink); font-size: 0.75rem; font-weight: 800;
+}
+.step[data-done="true"] .step-n { background: var(--ok); color: var(--surface); }
+fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 10px; }
+
+.barcode-row { display: grid; grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr); gap: 12px; align-items: start; }
+.upc-input { font-family: var(--mono); font-size: 1.5rem; letter-spacing: 0.05em; padding: 8px 10px; }
+
+.cats { display: grid; gap: 6px; }
+.cat { position: relative; display: block; }
+.cat-body {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  min-height: 46px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer;
+  font-size: 0.9375rem;
+}
+.cat input:checked + .cat-body { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: var(--accent-soft); font-weight: 600; }
+.cat input:focus-visible + .cat-body { outline: 3px solid var(--accent); outline-offset: 2px; }
+.cat-count { font-size: 0.8125rem; color: var(--muted); }
+.checks { display: grid; gap: 8px; }
+.check { display: flex; gap: 10px; align-items: center; font-size: 0.9375rem; min-height: 32px; }
+.check input { width: 20px; height: 20px; accent-color: var(--ink); flex: none; }
+
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.slot { display: grid; gap: 6px; align-content: start; }
+.tile {
+  position: relative; display: grid; align-content: end; gap: 2px;
+  aspect-ratio: 4 / 3; max-width: 100%; padding: 10px; overflow: hidden; cursor: pointer;
+  border: 1.5px dashed var(--line); border-radius: var(--radius); background: var(--ground);
+}
+.tile:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tile-text { position: relative; z-index: 1; display: grid; gap: 2px; }
+.tile-label { font-size: 0.875rem; font-weight: 700; line-height: 1.2; }
+.tile-state { font-size: 0.75rem; color: var(--muted); }
+.tile[data-state="photo"] { border: 2px solid var(--ok); }
+.tile[data-state="photo"]::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 40%, rgba(8, 10, 9, 0.78)); }
+.tile[data-state="photo"] .tile-label, .tile[data-state="photo"] .tile-state { color: #FFFFFF; }
+.tile[data-state="alt"] { border-style: solid; border-color: var(--ink); background: var(--surface); }
+.tile[data-state="alt"] .tile-state { color: var(--ink); font-weight: 600; }
+.tile[data-busy="true"] .tile-state::after { content: " …"; }
+.alts { display: flex; flex-wrap: wrap; gap: 6px; }
+.alt {
+  min-height: 32px; padding: 4px 10px; font-size: 0.75rem; font-weight: 600;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer;
+}
+.alt[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+
+.checklist { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; font-size: 0.8125rem; }
+.checklist li { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.checklist li::before {
+  content: ""; width: 14px; height: 14px; flex: none; border-radius: 3px; border: 1.5px solid var(--line);
+  background: center / 10px no-repeat;
+}
+.checklist li[data-done="true"] { color: var(--ink); }
+.checklist li[data-done="true"]::before {
+  background-color: var(--ok); border-color: var(--ok);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2l2.2 2.2L8.5 2.6' fill='none' stroke='white' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+.checklist li[data-problem="true"] { color: var(--bad); font-weight: 600; }
+.checklist li[data-problem="true"]::before { border-color: var(--bad); }
+
+/* Capture log ----------------------------------------------------------- */
+.log-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.log-head h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.seg.small span { min-height: 32px; padding: 4px 12px; font-size: 0.8125rem; }
+.log-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.log-item { display: grid; gap: 2px; padding-block: 10px; border-top: 1px solid var(--line); }
+.log-item[data-excluded="true"] .log-upc { text-decoration: line-through; color: var(--muted); }
+.log-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.log-upc { font-size: 1rem; font-weight: 500; letter-spacing: 0.03em; }
+.log-meta { font-size: 0.8125rem; color: var(--muted); }
+.log-error { font-size: 0.8125rem; color: var(--bad); }
+.pill { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--ground); color: var(--muted); white-space: nowrap; }
+.pill[data-tone="ok"] { background: var(--ok-soft); color: var(--ok); }
+.pill[data-tone="warn"] { background: var(--warn-soft); color: var(--warn); }
+.pill[data-tone="bad"] { background: var(--bad-soft); color: var(--bad); }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.log-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 2px; }
+.link { padding: 6px 0; background: none; border: 0; cursor: pointer; font-size: 0.8125rem; font-weight: 600; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.link.danger { color: var(--bad); }
+.more-btn { justify-self: start; }
+.empty { padding-block: 12px; border-top: 1px solid var(--line); }
+
+.toast {
+  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 10;
+  max-width: calc(100% - 32px); padding: 10px 16px; border-radius: var(--radius);
+  background: var(--ink); color: var(--on-ink); font-size: 0.875rem; font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+
+@media (max-width: 380px) {
+  .barcode-row, .tiles, .checklist { grid-template-columns: minmax(0, 1fr); }
+  .facts h2 { font-size: 1.875rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Label Drift</h1>
+      <p>Field capture for the allergen-label staleness study</p>
+    </div>
+    <span id="syncChip" class="chip" data-tone="muted" role="status">Connecting</span>
+  </header>
+
+  <p id="fatal" class="notice" hidden></p>
+
+  <!-- Sign in and join ------------------------------------------------------>
+  <section id="authView" class="card" hidden>
+    <h2 id="authTitle">Sign in</h2>
+    <p id="authIntro" class="hint"></p>
+    <p id="homeHint" class="notice" hidden><strong>First, add this page to your home screen.</strong> Tap Share, then Add to Home Screen, and open Label Drift from there. Signing in through the browser doesn’t carry over to the home-screen app.</p>
+
+    <div id="stageSignIn" class="wrap">
+      <fieldset class="seg small" id="modeToggle">
+        <legend class="vh">Account</legend>
+        <label for="mode-in"><input type="radio" name="authMode" id="mode-in" value="in" class="vh" checked><span>I have an account</span></label>
+        <label for="mode-new"><input type="radio" name="authMode" id="mode-new" value="new" class="vh"><span>Create one</span></label>
+      </fieldset>
+      <label class="field" for="username">Username
+        <input id="username" class="text-input" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="20" placeholder="sam_r">
+      </label>
+      <label class="field" for="password">Password
+        <input id="password" class="text-input" type="password" autocomplete="current-password" maxlength="72" placeholder="At least 8 characters">
+      </label>
+      <button type="button" class="btn btn-primary" id="signInBtn">Sign in</button>
+      <p class="protocol">Letters, numbers, dots, dashes and underscores. No email needed. If you forget the password, ask whoever invited you to reset it.</p>
+      <p id="googleOr" class="hint" hidden>or</p>
+      <button type="button" class="btn btn-quiet" id="googleBtn" hidden>Continue with Google</button>
+    </div>
+
+    <div id="stageJoin" class="wrap" hidden>
+      <label class="field" for="inviteCode">Invite code
+        <input id="inviteCode" class="text-input code-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" placeholder="3FA9C21B">
+      </label>
+      <label class="field" for="displayName">Name to show on your captures
+        <input id="displayName" class="text-input" type="text" autocomplete="name" maxlength="40" placeholder="First name and last initial">
+      </label>
+      <button type="button" class="btn btn-primary" id="joinBtn">Join the study</button>
+    </div>
+
+    <p id="authStatus" class="status" aria-live="polite"></p>
+  </section>
+
+  <!-- App -------------------------------------------------------------------->
+  <div id="appView" class="wrap" hidden>
+    <details class="session" id="sessionBox">
+      <summary>
+        <span>
+          <span class="eyebrow">Store</span>
+          <span id="sessionSummary" class="session-summary"></span>
+        </span>
+        <span class="edit">Change</span>
+      </summary>
+      <div class="session-body">
+        <label class="field" for="storeSelect">Store you’re in
+          <select id="storeSelect" class="text-input"></select>
+        </label>
+        <div id="newStore" class="new-store" hidden>
+          <label class="field" for="newStoreName">Store name and town
+            <input id="newStoreName" class="text-input" type="text" maxlength="80" autocomplete="off" placeholder="Aldi, Main Street">
+          </label>
+          <fieldset class="seg" id="storeTypes">
+            <legend>Store type</legend>
+          </fieldset>
+          <button type="button" class="btn btn-quiet" id="addStoreBtn">Add store</button>
+        </div>
+        <p class="hint">Capturing as <strong id="meName"></strong> <span id="meAccount"></span></p>
+        <button type="button" class="link" id="signOutBtn">Sign out</button>
+      </div>
+    </details>
+
+    <section class="facts" aria-labelledby="factsTitle">
+      <h2 id="factsTitle">Study Facts</h2>
+      <div class="line plain"><span>Pre-registered sample</span><strong>400 products</strong></div>
+      <div class="rule-heavy"></div>
+      <div class="big"><strong>Products captured</strong><span id="factTotal" class="num">0</span></div>
+      <div class="rule-mid"></div>
+      <div class="line dv plain"><span>% of target*</span></div>
+      <div id="factStrata"></div>
+      <div class="rule-heavy"></div>
+      <div class="line plain"><strong>Store types</strong><span></span></div>
+      <div id="factStores"></div>
+      <div class="line"><strong>Collectors</strong><span id="factCollectors" class="num">0</span></div>
+      <div class="line"><strong>Captured today</strong><span id="factToday" class="num">0</span></div>
+      <div class="line"><strong>Median time per product</strong><span id="factPace" class="num">–</span></div>
+      <p class="foot">* Percent of each stratum’s target sample size, across everyone collecting. A product counts once, in the stratum of its first capture; repeat scans are kept but not counted.</p>
+    </section>
+
+    <form id="captureForm" class="card" novalidate>
+      <h2>New product</h2>
+
+      <div class="step" id="step1">
+        <h3 class="step-title"><span class="step-n">1</span>Barcode</h3>
+        <div class="barcode-row">
+          <div class="slot" id="slot-barcode"></div>
+          <div class="field">
+            <label for="upc">UPC / EAN digits</label>
+            <input id="upc" class="text-input upc-input" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="044000032029">
+            <p id="upcStatus" class="status" aria-live="polite"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="step" id="step2">
+        <fieldset class="bare">
+          <legend class="step-title"><span class="step-n">2</span>Stratum</legend>
+          <div id="cats" class="cats"></div>
+        </fieldset>
+        <div class="checks">
+          <label class="check" for="storeBrand"><input type="checkbox" id="storeBrand">Store brand / private label</label>
+          <label class="check" for="freeFrom"><input type="checkbox" id="freeFrom">Carries a free-from or gluten-free claim</label>
+        </div>
+        <p class="hint">When more than one stratum fits: a free-from claim wins, then store brand, then product type. Tick the boxes either way.</p>
+      </div>
+
+      <div class="step" id="step3">
+        <h3 class="step-title"><span class="step-n">3</span>Label photos</h3>
+        <div id="tiles" class="tiles"></div>
+      </div>
+
+      <div class="step" id="step4">
+        <h3 class="step-title"><span class="step-n">4</span>Save</h3>
+        <label class="field" for="notes">Notes
+          <textarea id="notes" rows="2" placeholder="Two label versions on the shelf, damaged package…"></textarea>
+        </label>
+        <ul id="checklist" class="checklist"></ul>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="saveBtn">Save product</button>
+          <button type="button" class="btn btn-quiet" id="clearBtn">Clear</button>
+        </div>
+        <p class="protocol">Protocol: don’t add or edit study products on Open Food Facts until the study closes. It changes the thing being measured.</p>
+      </div>
+    </form>
+
+    <section class="card" aria-labelledby="logTitle">
+      <div class="log-head">
+        <h2 id="logTitle">Captures</h2>
+        <fieldset class="seg small" id="viewToggle">
+          <legend class="vh">Show captures from</legend>
+          <label for="view-mine"><input type="radio" name="logView" id="view-mine" value="mine" class="vh"><span>Mine</span></label>
+          <label for="view-everyone"><input type="radio" name="logView" id="view-everyone" value="everyone" class="vh"><span>Everyone</span></label>
+        </fieldset>
+      </div>
+      <ol id="logList" class="log-list"></ol>
+      <button type="button" class="link more-btn" id="moreBtn" hidden></button>
+    </section>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+const SUPABASE_URL = 'https://yygutjrmwwxrjtdzoebv.supabase.co';
+// Publishable key: safe in public code. The database access rules decide what it can do.
+const SUPABASE_KEY = 'sb_publishable_eDPWL8sIU3x9XFM8F9xNJw_WK9SKEp0';
+const AUTH_STORAGE_KEY = 'sb-yygutjrmwwxrjtdzoebv-auth-token';
+const APP_VERSION = '0.2.0';
+const PHOTO_BUCKET = 'photos';
+const PAGE = 25;
+const LOOKUP_RETRY_MS = 5 * 60 * 1000;
+
+const STRATA = [
+  ['bakery', 'Bakery, dough, mixes, icings', 80],
+  ['chocolate', 'Chocolate and cocoa', 60],
+  ['snacks', 'Snacks and bars', 60],
+  ['dairy', 'Dairy and dairy alternatives', 50],
+  ['sauces', 'Sauces, dressings, condiments', 40],
+  ['free_from', 'Free-from / gluten-free labeled', 60],
+  ['store_brand', 'Store brands (private label)', 50],
+];
+const STORE_TYPES = [['national_chain', 'National chain'], ['discount', 'Discount'], ['natural_specialty', 'Natural / specialty']];
+// maxEdge/quality keep 400 products inside the free 1 GB photo quota while ingredient text stays legible.
+const SLOTS = [
+  { id: 'barcode', label: 'Barcode', hint: 'Tap to photograph; reads the digits', alts: [], maxEdge: 1000, quality: 0.8 },
+  { id: 'ingredients', label: 'Ingredient panel', hint: 'Whole list, in focus', alts: [], maxEdge: 1800, quality: 0.82 },
+  { id: 'contains', label: '“Contains” statement', hint: 'Close enough to read', alts: [['in_ingredients', 'In ingredient photo'], ['none', 'None on package']], maxEdge: 1600, quality: 0.8 },
+  { id: 'pal', label: '“May contain” / facility', hint: 'Any precautionary wording', alts: [['in_ingredients', 'In ingredient photo'], ['none', 'None on package']], maxEdge: 1600, quality: 0.8 },
+  { id: 'datecode', label: 'Date or lot code', hint: 'Best-by, lot or plant code', alts: [['none', 'None visible']], maxEdge: 1200, quality: 0.8 },
+];
+
+const $ = (sel, root = document) => root.querySelector(sel);
+function h(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value == null || value === false) continue;
+    if (key === 'class') node.className = value;
+    else if (key === 'text') node.textContent = value;
+    else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value === true ? '' : value);
+  }
+  for (const child of children) if (child != null) node.append(child);
+  return node;
+}
+const saved = {
+  get(key) { try { return JSON.parse(localStorage.getItem('labeldrift:' + key)); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem('labeldrift:' + key, JSON.stringify(value)); } catch {} },
+};
+const hasAuthToken = () => { try { return Boolean(localStorage.getItem(AUTH_STORAGE_KEY)); } catch { return false; } };
+const localDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const stratumLabel = id => (STRATA.find(s => s[0] === id) || [, id || '—'])[1];
+const storeTypeLabel = id => (STORE_TYPES.find(t => t[0] === id) || [, id || ''])[1];
+function uuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+const sb = window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  : null;
+
+/* GTIN ------------------------------------------------------------------ */
+function checkDigitOk(d) {
+  const n = [...d].map(Number);
+  const check = n.pop();
+  let sum = 0;
+  n.reverse().forEach((x, i) => { sum += x * (i % 2 === 0 ? 3 : 1); });
+  return (10 - (sum % 10)) % 10 === check;
+}
+function expandUpcE(d) {
+  if (!/^[01]\d{7}$/.test(d)) return null;
+  const [ns, d1, d2, d3, d4, d5, d6, check] = d;
+  let body;
+  if ('012'.includes(d6)) body = d1 + d2 + d6 + '0000' + d3 + d4 + d5;
+  else if (d6 === '3') body = d1 + d2 + d3 + '00000' + d4 + d5;
+  else if (d6 === '4') body = d1 + d2 + d3 + d4 + '00000' + d5;
+  else body = d1 + d2 + d3 + d4 + d5 + '0000' + d6;
+  return ns + body + check;
+}
+function classifyCode(d, hint) {
+  if (!d) return { ok: false, empty: true };
+  if (d.length === 8) {
+    const upca = expandUpcE(d);
+    if (hint !== 'ean_8' && upca && checkDigitOk(upca)) return { ok: true, format: 'upc_e', gtin14: upca.padStart(14, '0'), label: 'UPC-E' };
+    if (checkDigitOk(d)) return { ok: true, format: 'ean_8', gtin14: d.padStart(14, '0'), label: 'EAN-8' };
+  }
+  const named = { 12: ['upc_a', 'UPC-A'], 13: ['ean_13', 'EAN-13'], 14: ['gtin_14', 'GTIN-14'] }[d.length];
+  if (named && checkDigitOk(d)) return { ok: true, format: named[0], gtin14: d.padStart(14, '0'), label: named[1] };
+  if (named || d.length === 8) return { ok: false, message: 'Check digit doesn’t match. Retake the photo or retype.' };
+  return { ok: false, message: `${d.length} digits. UPC-A has 12, EAN-13 has 13.` };
+}
+
+/* Photos and barcode decoding ------------------------------------------- */
+function loadImage(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => resolve({ img, url });
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('unreadable')); };
+    img.src = url;
+  });
+}
+function drawScaled(img, maxEdge) {
+  const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+function rotated(canvas) {
+  const out = document.createElement('canvas');
+  out.width = canvas.height; out.height = canvas.width;
+  const ctx = out.getContext('2d');
+  ctx.translate(out.width / 2, out.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+  return out;
+}
+const toJpeg = (canvas, quality) => new Promise((resolve, reject) =>
+  canvas.toBlob(b => (b ? resolve(b) : reject(new Error('compress'))), 'image/jpeg', quality));
+
+async function decodeBarcode(canvas) {
+  if ('BarcodeDetector' in window) {
+    try {
+      const detector = new window.BarcodeDetector({ formats: ['upc_a', 'upc_e', 'ean_13', 'ean_8'] });
+      const [hit] = await detector.detect(canvas);
+      if (hit) return { text: hit.rawValue, format: hit.format };
+    } catch {}
+  }
+  const Z = window.ZXing;
+  if (!Z) return null;
+  const formats = { [Z.BarcodeFormat.UPC_A]: 'upc_a', [Z.BarcodeFormat.UPC_E]: 'upc_e', [Z.BarcodeFormat.EAN_13]: 'ean_13', [Z.BarcodeFormat.EAN_8]: 'ean_8' };
+  const hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, Object.keys(formats).map(Number));
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  const reader = new Z.MultiFormatReader();
+  reader.setHints(hints);
+  for (const c of [canvas, rotated(canvas)]) {
+    try {
+      const { data, width, height } = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+      const lum = new Uint8ClampedArray(width * height);
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) lum[j] = (data[i] * 306 + data[i + 1] * 601 + data[i + 2] * 117) >> 10;
+      const result = reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(lum, width, height))));
+      return { text: result.getText(), format: formats[result.getBarcodeFormat()] };
+    } catch {}
+  }
+  return null;
+}
+
+/* Phone queue (IndexedDB) ------------------------------------------------ */
+const Local = (() => {
+  let opening = null;
+  const open = () => opening || (opening = new Promise(resolve => {
+    try {
+      const req = indexedDB.open('label-drift', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('queue', { keyPath: 'id' });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch { resolve(null); }
+  }));
+  const run = async (mode, fn) => {
+    const db = await open();
+    if (!db) return null;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('queue', mode);
+      const req = fn(tx.objectStore('queue'));
+      tx.oncomplete = () => resolve(req.result === undefined ? true : req.result);
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    });
+  };
+  return {
+    put: item => run('readwrite', s => s.put({ ...item, retry: false })),
+    del: id => run('readwrite', s => s.delete(id)),
+    all: () => run('readonly', s => s.getAll()),
+  };
+})();
+
+/* State ------------------------------------------------------------------ */
+const session = Object.assign({ storeId: '' }, saved.get('session') || {});
+const pendingStores = new Map(Object.entries(saved.get('pendingStores') || {}));
+const state = {
+  me: null, stores: new Map(), collectors: new Map(), remote: new Map(), queue: new Map(),
+  syncing: false, attempted: false, shown: PAGE, view: saved.get('view') === 'everyone' ? 'everyone' : 'mine',
+  excluding: null, discarding: null, addingStore: false, lookupAttempts: new Map(), started: false,
+};
+const blankForm = () => ({
+  startedAt: null, upc: '', upcFormat: null, upcSource: null, decodeFailed: false,
+  category: null, storeBrand: false, freeFrom: false, notes: '',
+  photos: Object.fromEntries(SLOTS.map(s => [s.id, null])), busy: {},
+});
+let form = blankForm();
+const touch = () => { if (!form.startedAt) form.startedAt = Date.now(); };
+const saveSession = () => saved.set('session', session);
+const savePendingStores = () => saved.set('pendingStores', Object.fromEntries(pendingStores));
+
+function storeById(id) {
+  if (!id) return null;
+  if (state.stores.has(id)) return state.stores.get(id);
+  return pendingStores.has(id) ? { ...pendingStores.get(id), pending: true } : null;
+}
+function allStores() {
+  const merged = new Map(state.stores);
+  for (const [id, s] of pendingStores) if (!merged.has(id)) merged.set(id, { ...s, pending: true });
+  return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+function allRecords() {
+  const merged = new Map();
+  for (const [id, row] of state.remote) merged.set(id, { ...row, _id: id, _sync: 'synced' });
+  for (const [id, item] of state.queue) {
+    if (!merged.has(id)) merged.set(id, { ...item.record, snapshots: [], _id: id, _sync: item.status, _error: item.error });
+  }
+  return [...merged.values()].sort((a, b) => (b.captured_at || '').localeCompare(a.captured_at || ''));
+}
+function firstCaptures(records) {
+  const firsts = new Map();
+  for (const r of [...records].reverse()) {
+    if (r.excluded) continue;
+    const key = r.gtin14 || r.upc;
+    if (!firsts.has(key)) firsts.set(key, r);
+  }
+  return firsts;
+}
+
+/* Errors ------------------------------------------------------------------ */
+function describe(err) {
+  const message = String((err && (err.message || err.error_description)) || err || '');
+  const code = String((err && (err.code || err.statusCode || err.status)) || '');
+  if (!navigator.onLine || /failed to fetch|network|load failed|timed out|offline/i.test(message)) {
+    return { transient: true, text: 'No connection. Uploads when you have signal.' };
+  }
+  if (/jwt|token|401|not authenticated/i.test(message) || code === '401') {
+    return { transient: true, text: 'Reconnecting to the study. Tap Retry if this stays.' };
+  }
+  if (code === '42501' || code === '403' || /row-level security|permission denied|not allowed|unauthorized/i.test(message)) {
+    return { transient: false, text: 'Not allowed to upload. Your access to the study may have been removed.' };
+  }
+  if (/quota|exceeded|too large|payload|413/i.test(message) || code === '413') {
+    return { transient: false, text: 'Photo storage is full or a photo is too large.' };
+  }
+  if (/rate limit|too many|429/i.test(message) || code === '429') {
+    return { transient: true, text: 'Too many uploads at once. Tap Retry in a minute.' };
+  }
+  return { transient: true, text: 'Upload failed. Tap Retry.' };
+}
+const isDuplicateUpload = error =>
+  String(error.statusCode || error.status || '') === '409' || /already exists|duplicate/i.test(error.message || '');
+
+/* Toast ------------------------------------------------------------------ */
+let toastTimer;
+function toast(message) {
+  const t = $('#toast');
+  t.textContent = message;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+}
+
+/* Sign in and join ------------------------------------------------------- */
+// Supabase identifies accounts by email, so a username maps to a stand-in address on a
+// domain reserved by RFC 2606: it can never receive mail and nothing is ever sent.
+const SYNTH_DOMAIN = 'labeldrift.invalid';
+const synthEmail = username => `${username}@${SYNTH_DOMAIN}`;
+const usernameOk = u => /^[a-z0-9][a-z0-9._-]{2,19}$/.test(u);
+const inviteFromUrl = () => {
+  const params = new URLSearchParams(location.search);
+  return params.get('invite') || params.get('code') || '';
+};
+
+function showAuth(stage, message) {
+  state.me = null;
+  $('#appView').hidden = true;
+  $('#authView').hidden = false;
+  $('#syncChip').hidden = true;
+  $('#homeHint').hidden = !isIOS() || isStandalone();
+  $('#stageSignIn').hidden = stage !== 'signin';
+  $('#stageJoin').hidden = stage !== 'join';
+  $('#authTitle').textContent = stage === 'join' ? 'Join the study' : 'Sign in';
+  $('#authIntro').textContent = stage === 'join'
+    ? 'You’re signed in. Enter the invite code you were sent and the name to show on your captures.'
+    : 'Label Drift photographs allergen labels in stores, to measure how often food databases fall out of date. Sign in to collect.';
+  if (stage === 'join') {
+    const invite = inviteFromUrl();
+    if (invite && !$('#inviteCode').value) $('#inviteCode').value = invite;
+    const last = saved.get('lastName');
+    if (last && !$('#displayName').value) $('#displayName').value = last;
+  }
+  setAuthStatus(message || '', message ? 'warn' : '');
+}
+function setAuthStatus(text, tone) {
+  const s = $('#authStatus');
+  s.textContent = text;
+  s.dataset.tone = tone || '';
+}
+function authMessage(err) {
+  const m = String((err && err.message) || err || '');
+  if (/invite code/i.test(m)) return 'That invite code isn’t valid. Check the message you were sent.';
+  if (/removed/i.test(m)) return 'This account was removed from the study. Ask the person who invited you.';
+  if (/invalid login credentials/i.test(m)) return 'Wrong username or password. Check both, or ask for a password reset.';
+  if (/already registered|already exists/i.test(m)) return 'That username is taken. Sign in instead, or pick another.';
+  if (/password.*(6|8|short|length)|weak/i.test(m)) return 'Choose a longer password: at least 8 characters.';
+  if (/email.*invalid|invalid.*email/i.test(m)) return 'That username isn’t allowed. Use letters, numbers, dots, dashes or underscores.';
+  if (/signups not allowed|disabled/i.test(m)) return 'Sign-in isn’t switched on yet. Tell the person who invited you.';
+  if (/confirm|not confirmed/i.test(m)) return 'This project still asks for email confirmation. Tell the owner to switch "Confirm email" off.';
+  if (/rate limit|too many/i.test(m)) return 'Too many attempts from this network. Try again in a few minutes.';
+  if (/failed to fetch|network|load failed/i.test(m)) return 'Couldn’t reach the study. Check your connection and try again.';
+  return 'Something went wrong: ' + m;
+}
+
+async function signInOrCreate() {
+  const username = $('#username').value.trim().toLowerCase();
+  const password = $('#password').value;
+  const creating = document.querySelector('input[name="authMode"]:checked').value === 'new';
+  if (!usernameOk(username)) {
+    return setAuthStatus('Usernames are 3 to 20 characters: letters, numbers, dots, dashes or underscores.', 'bad');
+  }
+  if (password.length < 8) return setAuthStatus('Passwords need at least 8 characters.', 'bad');
+  if (!navigator.onLine) return setAuthStatus('Signing in needs a connection.', 'bad');
+  const button = $('#signInBtn');
+  button.disabled = true;
+  setAuthStatus(creating ? 'Creating your account…' : 'Signing in…', '');
+  try {
+    const credentials = { email: synthEmail(username), password };
+    const { error } = creating ? await sb.auth.signUp(credentials) : await sb.auth.signInWithPassword(credentials);
+    if (error) throw error;
+    $('#password').value = '';
+    saved.set('lastUsername', username);
+    await afterSignIn();
+  } catch (err) {
+    setAuthStatus(authMessage(err), 'bad');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function googleSignIn() {
+  setAuthStatus('Opening Google…', '');
+  try {
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: location.origin + location.pathname + (inviteFromUrl() ? '?invite=' + inviteFromUrl() : '') },
+    });
+    if (error) throw error;
+  } catch (err) {
+    setAuthStatus(authMessage(err), 'bad');
+  }
+}
+
+// Signed in: either already a collector, or still needs the invite code.
+async function afterSignIn() {
+  const { data: { session: current } } = await sb.auth.getSession();
+  if (!current) return showAuth('signin');
+  const { data, error } = await sb.from('collectors')
+    .select('user_id,display_name').eq('user_id', current.user.id).maybeSingle();
+  if (data) {
+    state.me = { uid: data.user_id, name: data.display_name, account: accountLabel(current.user) };
+    saved.set('collector', state.me);
+    return showApp();
+  }
+  if (error && describe(error).transient) {
+    return showAuth('signin', 'Couldn’t reach the study. Check your connection and try again.');
+  }
+  showAuth('join');
+}
+function accountLabel(user) {
+  const email = (user && user.email) || '';
+  return email.endsWith('@' + SYNTH_DOMAIN) ? email.split('@')[0] : email;
+}
+
+async function join() {
+  const code = $('#inviteCode').value.replace(/[^0-9a-z]/gi, '').toUpperCase();
+  const name = $('#displayName').value.trim().replace(/\s+/g, ' ');
+  if (code.length < 6) return setAuthStatus('Enter the invite code from your message.', 'bad');
+  if (!name) return setAuthStatus('Enter the name to show on your captures.', 'bad');
+  if (!navigator.onLine) return setAuthStatus('Joining needs a connection. Try again when you have signal.', 'bad');
+  const button = $('#joinBtn');
+  button.disabled = true;
+  setAuthStatus('Joining…', '');
+  try {
+    const { error } = await sb.rpc('join_study', { p_invite_code: code, p_display_name: name });
+    if (error) throw error;
+    const { data: { session: current } } = await sb.auth.getSession();
+    state.me = { uid: current.user.id, name, account: accountLabel(current.user) };
+    saved.set('collector', state.me);
+    saved.set('lastName', name);
+    history.replaceState(null, '', location.pathname);
+    showApp();
+  } catch (err) {
+    setAuthStatus(authMessage(err), 'bad');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function signOut() {
+  try { await sb.auth.signOut(); } catch {}
+  saved.set('collector', null);
+  showAuth('signin', 'Signed out. Captures still waiting on this phone upload once you sign back in.');
+}
+
+// The Google button appears only when Google is switched on in Supabase.
+async function detectProviders() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: SUPABASE_KEY } });
+    const settings = await res.json();
+    const enabled = Boolean(settings && settings.external && settings.external.google);
+    $('#googleBtn').hidden = !enabled;
+    $('#googleOr').hidden = !enabled;
+  } catch {}
+}
+
+/* App -------------------------------------------------------------------- */
+const tiles = {};
+function buildApp() {
+  const types = $('#storeTypes');
+  for (const [id, label] of STORE_TYPES) {
+    types.append(h('label', { for: 'storeType-' + id },
+      h('input', { type: 'radio', name: 'newStoreType', id: 'storeType-' + id, value: id, class: 'vh' }),
+      h('span', { text: label })));
+  }
+  $('#storeSelect').addEventListener('change', e => {
+    const value = e.target.value;
+    state.addingStore = value === '__new';
+    if (!state.addingStore) { session.storeId = value; saveSession(); }
+    render();
+    if (state.addingStore) $('#newStoreName').focus();
+  });
+  $('#addStoreBtn').addEventListener('click', addStore);
+
+  const cats = $('#cats');
+  for (const [id, label] of STRATA) {
+    cats.append(h('label', { class: 'cat', for: 'cat-' + id },
+      h('input', { type: 'radio', name: 'category', id: 'cat-' + id, value: id, class: 'vh',
+        onchange: () => { touch(); form.category = id; render(); } }),
+      h('span', { class: 'cat-body' }, h('span', { text: label }), h('span', { class: 'cat-count num', 'data-cat': id }))));
+  }
+
+  for (const slot of SLOTS) {
+    const input = h('input', { type: 'file', id: 'file-' + slot.id, accept: 'image/*', capture: 'environment', class: 'vh' });
+    const img = h('img', { alt: '', hidden: true });
+    const stateText = h('span', { class: 'tile-state' });
+    const tile = h('label', { class: 'tile', for: 'file-' + slot.id, 'data-state': 'empty' },
+      input, img, h('span', { class: 'tile-text' }, h('span', { class: 'tile-label', text: slot.label }), stateText));
+    const alts = slot.alts.map(([value, text]) => h('button', {
+      type: 'button', class: 'alt', 'data-alt': value, 'aria-pressed': 'false', text,
+      onclick: () => chooseAlt(slot.id, value),
+    }));
+    const wrap = slot.id === 'barcode' ? $('#slot-barcode') : h('div', { class: 'slot' });
+    wrap.append(tile);
+    if (alts.length) wrap.append(h('div', { class: 'alts', role: 'group', 'aria-label': slot.label + ' alternatives' }, ...alts));
+    if (slot.id !== 'barcode') $('#tiles').append(wrap);
+    input.addEventListener('change', () => { const file = input.files && input.files[0]; input.value = ''; onPhoto(slot, file); });
+    tiles[slot.id] = { tile, img, stateText, alts };
+  }
+
+  $('#upc').addEventListener('input', e => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 14);
+    e.target.value = digits;
+    touch();
+    Object.assign(form, { upc: digits, upcFormat: null, upcSource: 'typed', decodeFailed: false });
+    render();
+  });
+  $('#storeBrand').addEventListener('change', e => { touch(); form.storeBrand = e.target.checked; });
+  $('#freeFrom').addEventListener('change', e => { touch(); form.freeFrom = e.target.checked; });
+  $('#notes').addEventListener('input', e => { form.notes = e.target.value; });
+  $('#captureForm').addEventListener('submit', onSave);
+  $('#clearBtn').addEventListener('click', () => { resetForm(); render(); toast('Form cleared'); });
+  $('#moreBtn').addEventListener('click', () => { state.shown += PAGE * 4; render(); });
+  $('#view-' + state.view).checked = true;
+  document.querySelectorAll('input[name="logView"]').forEach(r => r.addEventListener('change', e => {
+    state.view = e.target.value;
+    state.shown = PAGE;
+    saved.set('view', state.view);
+    render();
+  }));
+
+  $('#signOutBtn').addEventListener('click', signOut);
+  window.addEventListener('online', () => { sync(); refresh(); });
+  window.addEventListener('offline', render);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { refresh(); sync(); }
+  });
+  setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 60000);
+}
+
+async function showApp() {
+  $('#authView').hidden = true;
+  $('#stageJoin').hidden = true;
+  setAuthStatus('', '');
+  $('#appView').hidden = false;
+  $('#syncChip').hidden = false;
+  if (!state.started) {
+    state.started = true;
+    buildApp();
+    try {
+      for (const item of (await Local.all()) || []) {
+        if (item.status === 'uploading') item.status = 'queued';
+        item.paths = item.paths || {};
+        state.queue.set(item.id, item);
+      }
+    } catch {}
+  }
+  $('#sessionBox').open = !storeById(session.storeId);
+  render();
+  await refresh();
+  sync();
+}
+
+/* Stores ------------------------------------------------------------------ */
+async function pushStore(store) {
+  const { error } = await sb.from('stores').insert({ id: store.id, name: store.name, store_type: store.store_type });
+  if (error && error.code !== '23505') throw error;
+  pendingStores.delete(store.id);
+  savePendingStores();
+  state.stores.set(store.id, { id: store.id, name: store.name, store_type: store.store_type });
+}
+function addStore() {
+  const name = $('#newStoreName').value.trim().replace(/\s+/g, ' ');
+  const type = document.querySelector('input[name="newStoreType"]:checked');
+  if (name.length < 2) { toast('Enter the store name and town.'); return; }
+  if (!type) { toast('Choose the store type.'); return; }
+  const existing = allStores().find(s => s.name.toLowerCase() === name.toLowerCase());
+  if (existing) {
+    session.storeId = existing.id;
+    toast('That store is already on the list, so it’s selected.');
+  } else {
+    const store = { id: uuid(), name, store_type: type.value };
+    pendingStores.set(store.id, store);
+    savePendingStores();
+    session.storeId = store.id;
+    toast('Store added');
+    if (navigator.onLine) pushStore(store).then(render).catch(() => {});
+  }
+  state.addingStore = false;
+  $('#newStoreName').value = '';
+  type.checked = false;
+  saveSession();
+  render();
+}
+
+/* Form actions ----------------------------------------------------------- */
+function setPhoto(slotId, value) {
+  const previous = form.photos[slotId];
+  if (previous && previous.url) URL.revokeObjectURL(previous.url);
+  form.photos[slotId] = value;
+}
+function chooseAlt(slotId, value) {
+  touch();
+  const current = form.photos[slotId];
+  setPhoto(slotId, current && current.status === value ? null : { status: value });
+  render();
+}
+async function onPhoto(slot, file) {
+  if (!file) return;
+  touch();
+  form.busy[slot.id] = true;
+  render();
+  try {
+    const { img, url } = await loadImage(file);
+    try {
+      const blob = await toJpeg(drawScaled(img, slot.maxEdge), slot.quality);
+      setPhoto(slot.id, { status: 'photo', blob, url: URL.createObjectURL(blob) });
+      if (slot.id === 'barcode') {
+        const hit = await decodeBarcode(drawScaled(img, 1280));
+        if (hit) {
+          const digits = hit.text.replace(/\D/g, '');
+          Object.assign(form, { upc: digits, upcFormat: hit.format || null, upcSource: 'scanned', decodeFailed: false });
+          $('#upc').value = digits;
+        } else {
+          form.decodeFailed = true;
+        }
+      }
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  } catch {
+    toast('That photo couldn’t be opened. Take it again.');
+  }
+  form.busy[slot.id] = false;
+  render();
+}
+
+function checklist() {
+  const code = classifyCode(form.upc, form.upcFormat);
+  return [
+    ['Store chosen', Boolean(storeById(session.storeId))],
+    ['Valid barcode digits', code.ok],
+    ['Barcode photo', form.photos.barcode?.status === 'photo'],
+    ['Stratum', Boolean(form.category)],
+    ['Ingredient panel photo', form.photos.ingredients?.status === 'photo'],
+    ['“Contains” answered', Boolean(form.photos.contains)],
+    ['“May contain” answered', Boolean(form.photos.pal)],
+    ['Date or lot code answered', Boolean(form.photos.datecode)],
+  ];
+}
+
+function resetForm() {
+  for (const slot of SLOTS) setPhoto(slot.id, null);
+  form = blankForm();
+  $('#upc').value = '';
+  $('#notes').value = '';
+  $('#storeBrand').checked = false;
+  $('#freeFrom').checked = false;
+  document.querySelectorAll('input[name="category"]').forEach(r => { r.checked = false; });
+  state.attempted = false;
+}
+
+async function onSave(event) {
+  event.preventDefault();
+  if (checklist().some(([, done]) => !done)) {
+    state.attempted = true;
+    if (!storeById(session.storeId)) $('#sessionBox').open = true;
+    render();
+    toast('Finish the unticked items first.');
+    return;
+  }
+  const now = new Date();
+  const code = classifyCode(form.upc, form.upcFormat);
+  const id = 'c' + now.getTime().toString(36) + Math.random().toString(36).slice(2, 6);
+  const started = form.startedAt || now.getTime();
+  const record = {
+    id, collector_id: state.me.uid, store_id: session.storeId,
+    upc: form.upc, upc_format: code.format, upc_source: form.upcSource || 'typed', gtin14: code.gtin14,
+    category: form.category, store_brand: form.storeBrand, free_from_claim: form.freeFrom, notes: form.notes.trim(),
+    started_at: new Date(started).toISOString(), captured_at: now.toISOString(), local_date: localDate(now),
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    seconds_to_capture: Math.max(0, Math.round((now.getTime() - started) / 1000)),
+    app_version: APP_VERSION, excluded: false, photos: {},
+  };
+  const blobs = {};
+  for (const [slot, value] of Object.entries(form.photos)) {
+    record.photos[slot] = { status: value.status };
+    if (value.status === 'photo') blobs[slot] = value.blob;
+  }
+  const item = { id, record, blobs, paths: {}, status: 'queued', error: '', createdAt: now.getTime() };
+  let kept = false;
+  try { kept = Boolean(await Local.put(item)); } catch {}
+  state.queue.set(id, item);
+  resetForm();
+  render();
+  toast(kept ? 'Saved. Uploading…' : 'Saved in this tab only. Keep it open until it uploads.');
+  $('#captureForm').scrollIntoView({ block: 'start' });
+  sync();
+}
+
+/* Upload ---------------------------------------------------------------- */
+function captureRow(item) {
+  const r = item.record;
+  const photos = {};
+  for (const [slot, p] of Object.entries(r.photos)) {
+    photos[slot] = p.status === 'photo' ? { status: 'photo', path: item.paths[slot] } : p;
+  }
+  return {
+    id: r.id, store_id: r.store_id, upc: r.upc, upc_format: r.upc_format, upc_source: r.upc_source, gtin14: r.gtin14,
+    category: r.category, store_brand: r.store_brand, free_from_claim: r.free_from_claim, notes: r.notes, photos,
+    started_at: r.started_at, captured_at: r.captured_at, local_date: r.local_date, tz: r.tz,
+    seconds_to_capture: r.seconds_to_capture, app_version: r.app_version,
+  };
+}
+
+async function sync() {
+  if (state.syncing || !sb || !state.me) return;
+  state.syncing = true;
+  let changed = false;
+  try {
+    const { data: { session: current } } = await sb.auth.getSession();
+    const uid = current ? current.user.id : null;
+
+    for (const store of [...pendingStores.values()]) {
+      if (!navigator.onLine || !uid) break;
+      try { await pushStore(store); changed = true; } catch (err) { if (describe(err).transient) break; }
+    }
+
+    for (const item of [...state.queue.values()].sort((a, b) => a.createdAt - b.createdAt)) {
+      if (item.status === 'failed' && !item.retry) continue;
+      if (!navigator.onLine || !uid) {
+        item.status = 'waiting';
+        item.error = navigator.onLine ? 'Reconnecting to the study.' : 'No connection. Uploads when you have signal.';
+        continue;
+      }
+      item.retry = false;
+      item.status = 'uploading';
+      item.error = '';
+      render();
+      try {
+        const store = pendingStores.get(item.record.store_id);
+        if (store) await pushStore(store);
+        for (const slot of Object.keys(item.blobs)) {
+          if (item.paths[slot]) continue;
+          const path = `${uid}/${item.id}/${slot}.jpg`;
+          const { error } = await sb.storage.from(PHOTO_BUCKET).upload(path, item.blobs[slot], { contentType: 'image/jpeg', upsert: false });
+          if (error && !isDuplicateUpload(error)) throw error;
+          item.paths[slot] = path;
+          try { await Local.put(item); } catch {}
+        }
+        const row = captureRow(item);
+        const { error } = await sb.from('captures').insert(row);
+        if (error && error.code !== '23505') throw error;
+        state.remote.set(item.id, { ...row, collector_id: uid, excluded: false, snapshots: [] });
+        state.queue.delete(item.id);
+        try { await Local.del(item.id); } catch {}
+        changed = true;
+        requestLookup(item.id);
+      } catch (err) {
+        const d = describe(err);
+        item.status = d.transient ? 'waiting' : 'failed';
+        item.error = d.text;
+        try { await Local.put(item); } catch {}
+        if (d.transient) break;
+      }
+      render();
+    }
+  } finally {
+    state.syncing = false;
+    render();
+    if (changed) refresh();
+  }
+}
+
+// Ask the server to snapshot FoodData Central and Open Food Facts for a capture.
+async function requestLookup(id) {
+  const last = state.lookupAttempts.get(id) || 0;
+  if (Date.now() - last < LOOKUP_RETRY_MS || !navigator.onLine) return;
+  state.lookupAttempts.set(id, Date.now());
+  try {
+    const { data, error } = await sb.functions.invoke('lookup', { body: { capture_id: id } });
+    if (error || !data || !data.results) return;
+    const row = state.remote.get(id);
+    if (row) {
+      row.snapshots = Object.entries(data.results)
+        .filter(([, v]) => !String(v).startsWith('failed') && v !== 'save failed')
+        .map(([source]) => ({ source }));
+      render();
+    }
+  } catch {}
+}
+
+async function refresh() {
+  if (!sb || !state.me || !navigator.onLine) return;
+  if (!hasAuthToken()) {
+    showAuth('signin', 'You were signed out on this phone. Sign in again; captures saved here upload afterwards.');
+    return;
+  }
+  const [stores, collectors, captures] = await Promise.all([
+    sb.from('stores').select('id,name,store_type'),
+    sb.from('collectors').select('user_id,display_name'),
+    sb.from('captures')
+      .select('id,collector_id,store_id,upc,gtin14,category,captured_at,local_date,seconds_to_capture,photos,excluded,exclude_reason,snapshots(source)')
+      .order('captured_at', { ascending: false })
+      .limit(1000),
+  ]);
+  const failure = stores.error || collectors.error || captures.error;
+  if (failure) return;
+  const collectorMap = new Map(collectors.data.map(c => [c.user_id, c.display_name]));
+  if (!collectorMap.has(state.me.uid)) {
+    saved.set('collector', null);
+    showAuth('join', 'This account isn’t in the study any more. Enter the invite code again, or ask the person who invited you.');
+    return;
+  }
+  state.collectors = collectorMap;
+  state.stores = new Map(stores.data.map(s => [s.id, s]));
+  for (const id of [...pendingStores.keys()]) if (state.stores.has(id)) pendingStores.delete(id);
+  savePendingStores();
+  state.remote = new Map(captures.data.map(c => [c.id, c]));
+  for (const [id, item] of state.queue) {
+    if (state.remote.has(id) && item.status !== 'uploading') {
+      state.queue.delete(id);
+      Local.del(id).catch(() => {});
+    }
+  }
+  render();
+  const cutoff = Date.now() - 20 * 60 * 60 * 1000;
+  for (const c of captures.data) {
+    if (c.collector_id === state.me.uid && !c.excluded && (c.snapshots || []).length < 2 && Date.parse(c.captured_at) > cutoff) {
+      requestLookup(c.id);
+    }
+  }
+}
+
+function retry(id) {
+  const item = state.queue.get(id);
+  if (!item) return;
+  item.retry = true;
+  item.status = 'queued';
+  sync();
+}
+async function discard(id) {
+  if (state.discarding !== id) { state.discarding = id; render(); return; }
+  state.discarding = null;
+  state.queue.delete(id);
+  try { await Local.del(id); } catch {}
+  render();
+  toast('Capture discarded');
+}
+async function setExcluded(id, reason) {
+  state.excluding = null;
+  const patch = reason
+    ? { excluded: true, exclude_reason: reason, excluded_at: new Date().toISOString() }
+    : { excluded: false, exclude_reason: null, excluded_at: null };
+  const { error } = await sb.from('captures').update(patch).eq('id', id);
+  if (error) {
+    toast('Couldn’t update that capture. Try again.');
+  } else {
+    const row = state.remote.get(id);
+    if (row) Object.assign(row, patch);
+    toast(reason ? 'Excluded from the study' : 'Restored to the study');
+  }
+  render();
+}
+
+/* Render ---------------------------------------------------------------- */
+function render() {
+  if (!state.me) return;
+  const records = allRecords();
+  const firsts = firstCaptures(records);
+  renderSession();
+  renderFacts(records, firsts);
+  renderForm(records, firsts);
+  renderLog(records, firsts);
+  renderChip();
+}
+
+function renderSession() {
+  const store = storeById(session.storeId);
+  const summary = $('#sessionSummary');
+  summary.dataset.empty = String(!store);
+  summary.textContent = store ? `${store.name} · ${storeTypeLabel(store.store_type)}` : 'Choose the store you’re in';
+  $('#meName').textContent = state.me.name;
+  $('#meAccount').textContent = state.me.account ? `(${state.me.account})` : '';
+
+  const select = $('#storeSelect');
+  const stores = allStores();
+  const key = JSON.stringify([stores.map(s => [s.id, s.name, s.store_type, Boolean(s.pending)]), session.storeId, state.addingStore]);
+  if (select.dataset.key !== key) {
+    select.dataset.key = key;
+    select.replaceChildren(
+      h('option', { value: '', text: stores.length ? 'Choose a store…' : 'No stores yet. Add one below.' }),
+      ...stores.map(s => h('option', { value: s.id, text: `${s.name} · ${storeTypeLabel(s.store_type)}${s.pending ? ' (not uploaded yet)' : ''}` })),
+      h('option', { value: '__new', text: '+ Add a new store' }));
+    select.value = state.addingStore ? '__new' : (store ? session.storeId : '');
+  }
+  $('#newStore').hidden = !state.addingStore;
+}
+
+function renderFacts(records, firsts) {
+  const units = [...firsts.values()];
+  $('#factTotal').textContent = units.length;
+  $('#factStrata').replaceChildren(...STRATA.map(([id, label, target]) => {
+    const n = units.filter(u => u.category === id).length;
+    return h('div', { class: 'line stratum' },
+      h('span', { text: label }),
+      h('span', { class: 'num', text: `${n}/${target}` }),
+      h('strong', { class: 'num', text: Math.round((100 * n) / target) + '%' }));
+  }));
+  $('#factStores').replaceChildren(...STORE_TYPES.map(([id, label]) =>
+    h('div', { class: 'line indent' }, h('span', { text: label }),
+      h('span', { class: 'num', text: String(units.filter(u => storeById(u.store_id)?.store_type === id).length) }))));
+  $('#factCollectors').textContent = Math.max(state.collectors.size, 1);
+  const today = localDate(new Date());
+  const active = records.filter(r => !r.excluded);
+  $('#factToday').textContent = active.filter(r => r.local_date === today).length;
+  const times = active.map(r => r.seconds_to_capture).filter(t => Number.isFinite(t) && t > 0).sort((a, b) => a - b);
+  const median = times.length ? times[Math.floor((times.length - 1) / 2)] : null;
+  $('#factPace').textContent = median == null ? '–' : median >= 60 ? `${Math.floor(median / 60)} min ${median % 60} s` : `${median} s`;
+}
+
+function renderForm(records, firsts) {
+  const units = [...firsts.values()];
+  document.querySelectorAll('[data-cat]').forEach(node => {
+    const [, , target] = STRATA.find(s => s[0] === node.dataset.cat);
+    node.textContent = `${units.filter(u => u.category === node.dataset.cat).length}/${target}`;
+  });
+
+  const status = $('#upcStatus');
+  const code = classifyCode(form.upc, form.upcFormat);
+  if (code.empty) {
+    status.dataset.tone = form.decodeFailed ? 'bad' : '';
+    status.textContent = form.decodeFailed
+      ? 'Couldn’t read the barcode. Type the digits, or retake closer and flatter.'
+      : 'Photograph the barcode or type the digits under it.';
+  } else if (!code.ok) {
+    status.dataset.tone = 'bad';
+    status.textContent = code.message;
+  } else {
+    const earlier = records.find(r => !r.excluded && r.gtin14 === code.gtin14);
+    const where = earlier && storeById(earlier.store_id);
+    status.dataset.tone = earlier ? 'warn' : 'ok';
+    status.textContent = earlier
+      ? `Valid ${code.label}, but already captured ${new Date(earlier.captured_at).toLocaleDateString()}${where ? ' at ' + where.name : ''} (${stratumLabel(earlier.category)}). Save again only for a different store or lot.`
+      : `Valid ${code.label}${form.upcSource === 'scanned' ? ', read from the photo' : ''}.`;
+  }
+
+  for (const slot of SLOTS) {
+    const t = tiles[slot.id];
+    const value = form.photos[slot.id];
+    const isPhoto = value && value.status === 'photo';
+    t.tile.dataset.state = !value ? 'empty' : isPhoto ? 'photo' : 'alt';
+    t.tile.dataset.busy = String(Boolean(form.busy[slot.id]));
+    t.img.hidden = !isPhoto;
+    if (isPhoto) { if (t.img.src !== value.url) t.img.src = value.url; } else t.img.removeAttribute('src');
+    const altText = value && !isPhoto ? (slot.alts.find(a => a[0] === value.status) || [])[1] : '';
+    t.stateText.textContent = form.busy[slot.id] ? 'Processing' : !value ? slot.hint : isPhoto ? 'Photographed · tap to retake' : altText;
+    t.alts.forEach(b => b.setAttribute('aria-pressed', String(Boolean(value) && value.status === b.dataset.alt)));
+  }
+
+  const items = checklist();
+  $('#checklist').replaceChildren(...items.map(([label, done]) =>
+    h('li', { 'data-done': String(done), 'data-problem': String(state.attempted && !done), text: label })));
+  const done = labels => labels.every(l => items.find(i => i[0] === l)[1]);
+  $('#step1').dataset.done = String(done(['Valid barcode digits', 'Barcode photo']));
+  $('#step2').dataset.done = String(done(['Stratum']));
+  $('#step3').dataset.done = String(done(['Ingredient panel photo', '“Contains” answered', '“May contain” answered', 'Date or lot code answered']));
+  $('#step4').dataset.done = String(items.every(i => i[1]));
+}
+
+function renderLog(records, firsts) {
+  const list = $('#logList');
+  const primaryIds = new Set([...firsts.values()].map(r => r._id));
+  const visible = records.filter(r => state.view === 'everyone' || r.collector_id === state.me.uid);
+  if (!visible.length) {
+    list.replaceChildren(h('li', { class: 'empty hint', text: state.view === 'everyone'
+      ? 'Nobody has captured anything yet.'
+      : 'Nothing captured yet. Saved products appear here with their upload state.' }));
+  } else {
+    const today = localDate(new Date());
+    list.replaceChildren(...visible.slice(0, state.shown).map(r => {
+      const mine = r.collector_id === state.me.uid;
+      const when = new Date(r.captured_at);
+      const time = r.local_date === today
+        ? when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        : when.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const photos = Object.values(r.photos || {}).filter(p => p.status === 'photo').length;
+      const store = storeById(r.store_id);
+      const pill = r.excluded ? ['Excluded', ''] : {
+        synced: ['Uploaded', 'ok'], queued: ['On phone', 'warn'], uploading: ['Uploading', 'warn'],
+        waiting: ['Waiting', 'warn'], failed: ['Not uploaded', 'bad'],
+      }[r._sync] || ['On phone', 'warn'];
+      const lookedUp = (r.snapshots || []).length >= 2;
+      const meta = [stratumLabel(r.category), store ? store.name : null,
+        state.view === 'everyone' ? (mine ? 'You' : state.collectors.get(r.collector_id) || 'Someone') : null,
+        time, `${photos} photo${photos === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+
+      const actions = [];
+      if (r._sync === 'synced' && mine) {
+        if (r.excluded) actions.push(h('button', { type: 'button', class: 'link', text: 'Restore', onclick: () => setExcluded(r._id, '') }));
+        else if (state.excluding === r._id) {
+          for (const reason of ['Wrong product scanned', 'Duplicate capture', 'Photos unreadable', 'Other']) {
+            actions.push(h('button', { type: 'button', class: 'link danger', text: reason, onclick: () => setExcluded(r._id, reason) }));
+          }
+          actions.push(h('button', { type: 'button', class: 'link', text: 'Cancel', onclick: () => { state.excluding = null; render(); } }));
+        } else {
+          actions.push(h('button', { type: 'button', class: 'link', text: 'Exclude…', onclick: () => { state.excluding = r._id; render(); } }));
+        }
+      } else if (r._sync !== 'synced') {
+        if (r._sync === 'failed' || r._sync === 'waiting') actions.push(h('button', { type: 'button', class: 'link', text: 'Retry', onclick: () => retry(r._id) }));
+        if (r._sync !== 'uploading') {
+          actions.push(h('button', { type: 'button', class: 'link danger', onclick: () => discard(r._id),
+            text: state.discarding === r._id ? 'Tap again to discard' : 'Discard' }));
+        }
+      }
+
+      return h('li', { class: 'log-item', 'data-excluded': String(Boolean(r.excluded)) },
+        h('div', { class: 'log-top' },
+          h('span', { class: 'log-upc num', text: r.upc }),
+          h('span', { class: 'tags' },
+            !r.excluded && !primaryIds.has(r._id) ? h('span', { class: 'pill', text: 'Repeat' }) : null,
+            r._sync === 'synced' && !r.excluded ? h('span', { class: 'pill', 'data-tone': lookedUp ? 'ok' : '', text: lookedUp ? 'Looked up' : 'Lookup pending' }) : null,
+            h('span', { class: 'pill', 'data-tone': pill[1], text: pill[0] }))),
+        h('div', { class: 'log-meta', text: meta }),
+        r.excluded && r.exclude_reason ? h('div', { class: 'log-meta', text: 'Excluded: ' + r.exclude_reason }) : null,
+        r._error && r._sync !== 'synced' ? h('div', { class: 'log-error', text: r._error }) : null,
+        actions.length ? h('div', { class: 'log-actions' }, ...actions) : null);
+    }));
+  }
+  const more = $('#moreBtn');
+  more.hidden = visible.length <= state.shown;
+  more.textContent = `Show all ${visible.length}`;
+}
+
+function renderChip() {
+  const chip = $('#syncChip');
+  const queued = [...state.queue.values()];
+  const failed = queued.filter(i => i.status === 'failed').length;
+  let text, tone;
+  if (failed) [text, tone] = [`${failed} not uploaded`, 'bad'];
+  else if (queued.length && !navigator.onLine) [text, tone] = [`Offline · ${queued.length} on phone`, 'warn'];
+  else if (queued.length) [text, tone] = [state.syncing ? `Uploading ${queued.length}` : `${queued.length} waiting`, 'warn'];
+  else if (!navigator.onLine) [text, tone] = ['Offline', 'warn'];
+  else [text, tone] = ['All uploaded', 'ok'];
+  chip.textContent = text;
+  chip.dataset.tone = tone;
+}
+
+/* Boot ------------------------------------------------------------------ */
+async function boot() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  $('#signInBtn').addEventListener('click', signInOrCreate);
+  $('#googleBtn').addEventListener('click', googleSignIn);
+  $('#joinBtn').addEventListener('click', join);
+  $('#username').addEventListener('keydown', e => { if (e.key === 'Enter') $('#password').focus(); });
+  $('#password').addEventListener('keydown', e => { if (e.key === 'Enter') signInOrCreate(); });
+  document.querySelectorAll('input[name="authMode"]').forEach(radio => radio.addEventListener('change', () => {
+    const creating = radio.value === 'new' && radio.checked;
+    $('#signInBtn').textContent = creating ? 'Create account' : 'Sign in';
+    $('#password').autocomplete = creating ? 'new-password' : 'current-password';
+    $('#password').placeholder = creating ? 'At least 8 characters' : 'Your password';
+    setAuthStatus('', '');
+  }));
+  const lastUsername = saved.get('lastUsername');
+  if (lastUsername) $('#username').value = lastUsername;
+
+  if (!sb) {
+    const fatal = $('#fatal');
+    fatal.textContent = 'Label Drift couldn’t load. Check your connection, then reload the page.';
+    fatal.hidden = false;
+    $('#syncChip').hidden = true;
+    return;
+  }
+  detectProviders();
+
+  const cached = saved.get('collector');
+  let current = null;
+  try { current = (await sb.auth.getSession()).data.session; } catch {}
+
+  if (current) return afterSignIn();
+  if (cached && hasAuthToken()) {
+    state.me = cached;   // offline with an expired token: keep capturing, upload after reconnecting
+    return showApp();
+  }
+  showAuth('signin');
+}
+boot();
+})();
+</script>
+</body>
+</html>
