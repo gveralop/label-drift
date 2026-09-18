@@ -1,6 +1,6 @@
 // Label Drift service worker: keeps the app opening in stores with no signal.
 // Bump CACHE when index.html changes so phones pick up the new version.
-const CACHE = 'label-drift-v1';
+const CACHE = 'label-drift-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 const LIBRARIES = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js',

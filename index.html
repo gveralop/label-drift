@@ -97,6 +97,13 @@ textarea { resize: vertical; min-height: 64px; font: inherit; }
 .status[data-tone="warn"] { color: var(--warn); }
 .status[data-tone="bad"] { color: var(--bad); }
 .notice { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); font-size: 0.875rem; }
+.rules { list-style: none; margin: -4px 0 0; padding: 0; display: grid; gap: 2px; font-size: 0.75rem; color: var(--muted); }
+.rules li { display: flex; gap: 8px; align-items: baseline; }
+.rules li::before { content: "•"; color: var(--muted); }
+.rules li[data-ok="true"] { color: var(--ok); }
+.rules li[data-ok="true"]::before { content: "✓"; color: var(--ok); }
+.rules li[data-ok="false"]::before { content: "•"; color: var(--bad); }
+.rules li[data-ok="false"] { color: var(--bad); }
 .notice strong { color: var(--warn); }
 
 .seg { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -283,11 +290,20 @@ fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; g
       <label class="field" for="username">Username
         <input id="username" class="text-input" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="20" placeholder="sam_r">
       </label>
+      <ul class="rules" id="usernameRules">
+        <li data-rule="length">3 to 20 characters</li>
+        <li data-rule="chars">Lowercase letters, numbers, dot, dash or underscore</li>
+        <li data-rule="start">Starts with a letter or number</li>
+      </ul>
       <label class="field" for="password">Password
         <input id="password" class="text-input" type="password" autocomplete="current-password" maxlength="72" placeholder="At least 8 characters">
       </label>
+      <ul class="rules" id="passwordRules">
+        <li data-rule="pwlength">At least 8 characters</li>
+      </ul>
+      <label class="check" for="showPassword"><input type="checkbox" id="showPassword">Show password</label>
       <button type="button" class="btn btn-primary" id="signInBtn">Sign in</button>
-      <p class="protocol">Letters, numbers, dots, dashes and underscores. No email needed. If you forget the password, ask whoever invited you to reset it.</p>
+      <p class="protocol">No email needed, and capital letters are turned into lowercase for you. If you forget your password, ask whoever invited you to reset it — there's no email to send a reset to.</p>
       <p id="googleOr" class="hint" hidden>or</p>
       <button type="button" class="btn btn-quiet" id="googleBtn" hidden>Continue with Google</button>
     </div>
@@ -678,9 +694,10 @@ function toast(message) {
 }
 
 /* Sign in and join ------------------------------------------------------- */
-// Supabase identifies accounts by email, so a username maps to a stand-in address on a
-// domain reserved by RFC 2606: it can never receive mail and nothing is ever sent.
-const SYNTH_DOMAIN = 'labeldrift.invalid';
+// Supabase identifies accounts by email, so a username maps to a stand-in address under
+// example.com, reserved by RFC 2606 and unable to receive mail. Nothing is ever sent (the
+// project has "Confirm email" off). A .invalid address is rejected by Supabase's validator.
+const SYNTH_DOMAIN = 'labeldrift.example.com';
 const synthEmail = username => `${username}@${SYNTH_DOMAIN}`;
 const usernameOk = u => /^[a-z0-9][a-z0-9._-]{2,19}$/.test(u);
 const inviteFromUrl = () => {
@@ -720,12 +737,29 @@ function authMessage(err) {
   if (/invalid login credentials/i.test(m)) return 'Wrong username or password. Check both, or ask for a password reset.';
   if (/already registered|already exists/i.test(m)) return 'That username is taken. Sign in instead, or pick another.';
   if (/password.*(6|8|short|length)|weak/i.test(m)) return 'Choose a longer password: at least 8 characters.';
-  if (/email.*invalid|invalid.*email/i.test(m)) return 'That username isn’t allowed. Use letters, numbers, dots, dashes or underscores.';
+  // The stand-in address, not the username, is what the server objects to here.
+  if (/email.*invalid|invalid.*email|unable to validate email|cannot be used/i.test(m)) {
+    return 'Your username is fine — the study server rejected the account address it builds from it. Tell whoever invited you; this needs a settings change, not a different username.';
+  }
   if (/signups not allowed|disabled/i.test(m)) return 'Sign-in isn’t switched on yet. Tell the person who invited you.';
   if (/confirm|not confirmed/i.test(m)) return 'This project still asks for email confirmation. Tell the owner to switch "Confirm email" off.';
-  if (/rate limit|too many/i.test(m)) return 'Too many attempts from this network. Try again in a few minutes.';
+  if (/rate limit|too many|429/i.test(m)) return 'Too many sign-in attempts from this network. Wait about five minutes, then try again.';
   if (/failed to fetch|network|load failed/i.test(m)) return 'Couldn’t reach the study. Check your connection and try again.';
   return 'Something went wrong: ' + m;
+}
+
+// Live tick-list under the username and password fields.
+function updateRules() {
+  const username = $('#username').value;
+  const password = $('#password').value;
+  const mark = (rule, ok, touched) => {
+    const li = document.querySelector(`[data-rule="${rule}"]`);
+    if (li) li.dataset.ok = touched ? String(ok) : '';
+  };
+  mark('length', username.length >= 3 && username.length <= 20, username.length > 0);
+  mark('chars', /^[a-z0-9._-]*$/.test(username), username.length > 0);
+  mark('start', /^[a-z0-9]/.test(username), username.length > 0);
+  mark('pwlength', password.length >= 8, password.length > 0);
 }
 
 async function signInOrCreate() {
@@ -1420,6 +1454,15 @@ async function boot() {
   $('#joinBtn').addEventListener('click', join);
   $('#username').addEventListener('keydown', e => { if (e.key === 'Enter') $('#password').focus(); });
   $('#password').addEventListener('keydown', e => { if (e.key === 'Enter') signInOrCreate(); });
+  $('#username').addEventListener('input', e => {
+    const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    if (cleaned !== e.target.value) e.target.value = cleaned;
+    updateRules();
+  });
+  $('#password').addEventListener('input', updateRules);
+  $('#showPassword').addEventListener('change', e => {
+    $('#password').type = e.target.checked ? 'text' : 'password';
+  });
   document.querySelectorAll('input[name="authMode"]').forEach(radio => radio.addEventListener('change', () => {
     const creating = radio.value === 'new' && radio.checked;
     $('#signInBtn').textContent = creating ? 'Create account' : 'Sign in';
@@ -1429,6 +1472,7 @@ async function boot() {
   }));
   const lastUsername = saved.get('lastUsername');
   if (lastUsername) $('#username').value = lastUsername;
+  updateRules();
 
   if (!sb) {
     const fatal = $('#fatal');
