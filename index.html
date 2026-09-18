@@ -173,6 +173,17 @@ textarea { resize: vertical; min-height: 64px; font: inherit; }
 .warnings li { padding: 8px 10px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); }
 .warnings li[data-tone="ok"] { background: var(--ok-soft); color: var(--ok); }
 
+.shot-btn { padding: 0; border: 0; background: none; cursor: zoom-in; display: block; width: 100%; }
+.lightbox { position: fixed; inset: 0; z-index: 30; background: rgba(4, 6, 5, 0.94); display: grid; grid-template-rows: auto 1fr auto; }
+.lightbox-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: max(10px, env(safe-area-inset-top)) 14px 10px; }
+.lightbox-bar span { color: #F4F6F4; font-size: 0.875rem; font-weight: 600; }
+.lightbox-bar button { background: none; border: 1px solid rgba(244, 246, 244, 0.5); color: #F4F6F4; border-radius: 999px; padding: 6px 14px; min-height: 40px; font-weight: 600; cursor: pointer; }
+.lightbox-stage { overflow: auto; display: grid; place-items: center; padding: 0 8px; -webkit-overflow-scrolling: touch; }
+.lightbox-stage img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+.lightbox-stage[data-zoomed="true"] { place-items: start; }
+.lightbox-stage[data-zoomed="true"] img { max-width: none; max-height: none; width: 250%; cursor: zoom-out; }
+.lightbox-hint { color: #A8B1AC; font-size: 0.75rem; text-align: center; padding: 8px 14px max(12px, env(safe-area-inset-bottom)); }
+
 /* Study Facts panel — set like a Nutrition Facts label ---------------- */
 .facts { background: var(--surface); border: 2px solid var(--ink); padding: 4px 10px 8px; }
 .facts h2 { margin: 0; font-size: 2.25rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.05; }
@@ -499,6 +510,16 @@ fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; g
       <button type="button" class="btn btn-quiet" id="backToFormBtn">Go back</button>
     </div>
   </div>
+</div>
+<div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-labelledby="lightboxCap">
+  <div class="lightbox-bar">
+    <span id="lightboxCap"></span>
+    <button type="button" id="lightboxClose">Close</button>
+  </div>
+  <div class="lightbox-stage" id="lightboxStage" data-zoomed="false">
+    <img id="lightboxImg" alt="">
+  </div>
+  <p class="lightbox-hint">Tap the photo to zoom in, then drag to move around it.</p>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
@@ -1041,6 +1062,13 @@ function buildApp() {
     if (state.addingStore) $('#storeChain').focus();
   });
   $('#confirmSaveBtn').addEventListener('click', saveCapture);
+  $('#lightboxClose').addEventListener('click', closeZoom);
+  $('#lightboxImg').addEventListener('click', () => {
+    const stage = $('#lightboxStage');
+    stage.dataset.zoomed = stage.dataset.zoomed === 'true' ? 'false' : 'true';
+  });
+  $('#lightboxStage').addEventListener('click', e => { if (e.target.id === 'lightboxStage') closeZoom(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#lightbox').hidden) closeZoom(); });
   $('#backToFormBtn').addEventListener('click', () => { state.review = false; render(); });
   $('#addStoreBtn').addEventListener('click', addStore);
   for (const id of ['storeChain', 'storeStreet', 'storeTown', 'storeState', 'storeNumber', 'storeZip']) {
@@ -1504,6 +1532,32 @@ async function setExcluded(id, reason) {
   render();
 }
 
+/* Full-size photo viewer --------------------------------------------------- */
+function openZoom(url, label) {
+  if (!url) return;
+  const stage = $('#lightboxStage');
+  stage.dataset.zoomed = 'false';
+  stage.scrollTop = 0;
+  stage.scrollLeft = 0;
+  $('#lightboxImg').src = url;
+  $('#lightboxImg').alt = label || '';
+  $('#lightboxCap').textContent = label || '';
+  $('#lightbox').hidden = false;
+}
+function closeZoom() {
+  $('#lightbox').hidden = true;
+  $('#lightboxImg').removeAttribute('src');
+}
+// A thumbnail that opens the full-size photo.
+function shotButton(url, label, warning) {
+  return h('div', { class: 'preview-shot', 'data-flagged': String(Boolean(warning)) },
+    url
+      ? h('button', { type: 'button', class: 'shot-btn', onclick: () => openZoom(url, label) },
+          h('img', { src: url, alt: label, loading: 'lazy' }))
+      : h('span', { class: 'cap', text: 'loading…' }),
+    h('span', { class: 'cap', text: warning ? `${label} — ${warning}` : label }));
+}
+
 /* Preview and confirmation ------------------------------------------------ */
 async function openPreview(id) {
   state.open = state.open === id ? null : id;
@@ -1535,15 +1589,8 @@ function renderPreviewBlock(r) {
   const shots = slots.filter(([, p]) => p.status === 'photo');
   const answers = slots.filter(([, p]) => p.status !== 'photo');
   return h('div', { class: 'preview' },
-    h('div', { class: 'preview-photos' }, ...shots.map(([slot, p]) => {
-      const url = urls[slot.id];
-      const warning = photoWarning(p.quality);
-      return h('div', { class: 'preview-shot', 'data-flagged': String(Boolean(warning)) },
-        url
-          ? h('a', { href: url, target: '_blank', rel: 'noopener' }, h('img', { src: url, alt: slot.label, loading: 'lazy' }))
-          : h('span', { class: 'cap', text: 'loading…' }),
-        h('span', { class: 'cap', text: warning ? `${slot.label} — ${warning}` : slot.label }));
-    })),
+    h('div', { class: 'preview-photos' },
+      ...shots.map(([slot, p]) => shotButton(urls[slot.id], slot.label, photoWarning(p.quality)))),
     h('div', { class: 'preview-fields' },
       h('div', {}, h('b', { text: 'Barcode ' }), r.upc),
       h('div', {}, h('b', { text: 'Stratum ' }), stratumLabel(r.category)),
@@ -1564,21 +1611,20 @@ function renderReview() {
   if (!state.review) return;
   const code = classifyCode(form.upc, form.upcFormat);
   const store = storeById(session.storeId);
-  $('#reviewSummary').replaceChildren(
+  // replaceChildren renders a null as the text "null", so drop the empty rows first.
+  $('#reviewSummary').replaceChildren(...[
     h('div', {}, h('b', { text: 'Barcode ' }), `${form.upc} (${code.label || 'typed'})`),
     h('div', {}, h('b', { text: 'Stratum ' }), stratumLabel(form.category)),
     h('div', {}, h('b', { text: 'Store ' }), store ? store.name : '—'),
     form.storeBrand ? h('div', {}, h('b', { text: 'Store brand ' }), 'yes') : null,
     form.freeFrom ? h('div', {}, h('b', { text: 'Free-from claim ' }), 'yes') : null,
-    form.notes.trim() ? h('div', {}, h('b', { text: 'Note ' }), form.notes.trim()) : null);
+    form.notes.trim() ? h('div', {}, h('b', { text: 'Note ' }), form.notes.trim()) : null,
+  ].filter(Boolean));
 
   const slots = SLOTS.map(slot => [slot, form.photos[slot.id]]).filter(([, v]) => v);
-  $('#reviewPhotos').replaceChildren(...slots.filter(([, v]) => v.status === 'photo').map(([slot, v]) => {
-    const warning = photoWarning(v.quality);
-    return h('div', { class: 'preview-shot', 'data-flagged': String(Boolean(warning)) },
-      h('img', { src: v.url, alt: slot.label }),
-      h('span', { class: 'cap', text: warning ? `${slot.label} — ${warning}` : slot.label }));
-  }));
+  $('#reviewPhotos').replaceChildren(...slots
+    .filter(([, v]) => v.status === 'photo')
+    .map(([slot, v]) => shotButton(v.url, slot.label, photoWarning(v.quality))));
 
   const problems = slots
     .filter(([, v]) => v.status === 'photo' && photoWarning(v.quality))
