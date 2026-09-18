@@ -138,6 +138,8 @@ textarea { resize: vertical; min-height: 64px; font: inherit; }
 .session-summary[data-empty="true"] { color: var(--bad); }
 .session-body { display: grid; gap: 12px; padding: 0 12px 12px; }
 .new-store { display: grid; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: var(--radius); }
+.two-up { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem; gap: 10px; }
+.optional { font-weight: 400; color: var(--muted); }
 
 /* Study Facts panel — set like a Nutrition Facts label ---------------- */
 .facts { background: var(--surface); border: 2px solid var(--ink); padding: 4px 10px 8px; }
@@ -336,12 +338,30 @@ fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; g
           <select id="storeSelect" class="text-input"></select>
         </label>
         <div id="newStore" class="new-store" hidden>
-          <label class="field" for="newStoreName">Store name and town
-            <input id="newStoreName" class="text-input" type="text" maxlength="80" autocomplete="off" placeholder="Aldi, Main Street">
+          <p class="hint">Everyone uses the same format, so one shop can’t be added twice under different names. Write the name as it appears on the sign.</p>
+          <label class="field" for="storeChain">Chain or shop name
+            <input id="storeChain" class="text-input" type="text" maxlength="40" autocomplete="off" list="chainList" placeholder="CVS">
+          </label>
+          <datalist id="chainList"></datalist>
+          <label class="field" for="storeStreet">Street <span class="optional">optional, but tells two branches apart</span>
+            <input id="storeStreet" class="text-input" type="text" maxlength="60" autocomplete="off" placeholder="100 W Main St">
+          </label>
+          <div class="two-up">
+            <label class="field" for="storeTown">Town
+              <input id="storeTown" class="text-input" type="text" maxlength="40" autocomplete="off" list="townList" placeholder="Lansdale">
+            </label>
+            <label class="field" for="storeState">State
+              <input id="storeState" class="text-input" type="text" maxlength="2" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="PA">
+            </label>
+          </div>
+          <datalist id="townList"></datalist>
+          <label class="field" for="storeNumber">Store number <span class="optional">optional, from the receipt or door</span>
+            <input id="storeNumber" class="text-input" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="1234">
           </label>
           <fieldset class="seg" id="storeTypes">
             <legend>Store type</legend>
           </fieldset>
+          <p id="storePreview" class="status" aria-live="polite"></p>
           <button type="button" class="btn btn-quiet" id="addStoreBtn">Add store</button>
         </div>
         <p class="hint">Capturing as <strong id="meName"></strong> <span id="meAccount"></span></p>
@@ -878,9 +898,15 @@ function buildApp() {
     state.addingStore = value === '__new';
     if (!state.addingStore) { session.storeId = value; saveSession(); }
     render();
-    if (state.addingStore) $('#newStoreName').focus();
+    if (state.addingStore) $('#storeChain').focus();
   });
   $('#addStoreBtn').addEventListener('click', addStore);
+  for (const id of ['storeChain', 'storeStreet', 'storeTown', 'storeState', 'storeNumber']) {
+    $('#' + id).addEventListener('input', e => {
+      if (id === 'storeState') e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+      renderStorePreview();
+    });
+  }
 
   const cats = $('#cats');
   for (const [id, label] of STRATA) {
@@ -969,16 +995,65 @@ async function pushStore(store) {
   savePendingStores();
   state.stores.set(store.id, { id: store.id, name: store.name, store_type: store.store_type });
 }
+// Store names are composed, never free-typed, so the same shop can't arrive under
+// three spellings: "CVS #1234, 100 W Main St, Lansdale PA".
+const tidy = value => value.trim().replace(/\s+/g, ' ');
+function composeStoreName({ chain, number, street, town, state }) {
+  return `${chain}${number ? ' #' + number : ''}, ${street ? street + ', ' : ''}${town} ${state}`;
+}
+function storeParts(name) {
+  const m = /^(.+?)(?:\s+#(\S+))?,\s*(?:(.+),\s*)?(.+?)\s+([A-Za-z]{2})$/.exec(name || '');
+  return m
+    ? { chain: m[1], number: m[2] || '', street: m[3] || '', town: m[4], state: m[5].toUpperCase() }
+    : { chain: name || '', number: '', street: '', town: '', state: '' };
+}
+const titleCase = value => value.replace(/[^\s-]+/g, w => (/^[A-Z0-9&.'-]+$/.test(w) ? w : w[0].toUpperCase() + w.slice(1).toLowerCase()));
+function newStoreFields() {
+  return {
+    chain: tidy($('#storeChain').value),
+    street: tidy($('#storeStreet').value),
+    town: titleCase(tidy($('#storeTown').value)),
+    state: $('#storeState').value.trim().toUpperCase(),
+    number: $('#storeNumber').value.replace(/[^0-9A-Za-z-]/g, ''),
+  };
+}
+function renderStorePreview() {
+  const f = newStoreFields();
+  const preview = $('#storePreview');
+  if (!f.chain || !f.town || !/^[A-Z]{2}$/.test(f.state)) {
+    preview.dataset.tone = '';
+    preview.textContent = 'Fill in the shop, town and state.';
+    return;
+  }
+  preview.dataset.tone = 'ok';
+  preview.textContent = 'Adds as: ' + composeStoreName(f);
+}
+
 function addStore() {
-  const name = $('#newStoreName').value.trim().replace(/\s+/g, ' ');
+  const f = newStoreFields();
   const type = document.querySelector('input[name="newStoreType"]:checked');
-  if (name.length < 2) { toast('Enter the store name and town.'); return; }
-  if (!type) { toast('Choose the store type.'); return; }
-  const existing = allStores().find(s => s.name.toLowerCase() === name.toLowerCase());
+  if (f.chain.length < 2) return toast('Enter the chain or shop name.');
+  if (f.town.length < 2) return toast('Enter the town.');
+  if (!/^[A-Z]{2}$/.test(f.state)) return toast('Enter the two-letter state, like PA.');
+  if (!type) return toast('Choose the store type.');
+
+  // Reuse the spelling of a chain someone already added, so CVS and cvs stay one chain.
+  const known = allStores().map(s => ({ id: s.id, name: s.name, ...storeParts(s.name) }));
+  const sameChain = known.find(p => p.chain.toLowerCase() === f.chain.toLowerCase());
+  const fields = { ...f, chain: sameChain ? sameChain.chain : f.chain };
+  const name = composeStoreName(fields);
+
+  const existing = known.find(p => p.name.toLowerCase() === name.toLowerCase());
   if (existing) {
     session.storeId = existing.id;
     toast('That store is already on the list, so it’s selected.');
   } else {
+    const sameTown = known.filter(p => p.chain.toLowerCase() === fields.chain.toLowerCase()
+      && p.town.toLowerCase() === fields.town.toLowerCase() && p.state === fields.state);
+    if (sameTown.length && !fields.number && !fields.street) {
+      toast(`There’s already a ${fields.chain} in ${fields.town} ${fields.state}. Add the store number or street, or pick it from the list.`);
+      return;
+    }
     const store = { id: uuid(), name, store_type: type.value };
     pendingStores.set(store.id, store);
     savePendingStores();
@@ -987,7 +1062,7 @@ function addStore() {
     if (navigator.onLine) pushStore(store).then(render).catch(() => {});
   }
   state.addingStore = false;
-  $('#newStoreName').value = '';
+  for (const id of ['storeChain', 'storeStreet', 'storeTown', 'storeState', 'storeNumber']) $('#' + id).value = '';
   type.checked = false;
   saveSession();
   render();
@@ -1295,6 +1370,19 @@ function renderSession() {
     select.value = state.addingStore ? '__new' : (store ? session.storeId : '');
   }
   $('#newStore').hidden = !state.addingStore;
+  if (state.addingStore) {
+    const parts = stores.map(s => storeParts(s.name));
+    const fill = (listId, values) => {
+      const list = $('#' + listId);
+      const unique = [...new Set(values.filter(Boolean))].sort();
+      if (list.dataset.key === unique.join('|')) return;
+      list.dataset.key = unique.join('|');
+      list.replaceChildren(...unique.map(v => h('option', { value: v })));
+    };
+    fill('chainList', parts.map(p => p.chain));
+    fill('townList', parts.map(p => p.town));
+    renderStorePreview();
+  }
 }
 
 function renderFacts(records, firsts) {
