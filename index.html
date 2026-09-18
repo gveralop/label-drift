@@ -718,6 +718,7 @@ function toast(message) {
 // example.com, reserved by RFC 2606 and unable to receive mail. Nothing is ever sent (the
 // project has "Confirm email" off). A .invalid address is rejected by Supabase's validator.
 const SYNTH_DOMAIN = 'labeldrift.example.com';
+const LEGACY_DOMAIN = 'labeldrift.invalid';  // accounts created before Supabase rejected .invalid
 const synthEmail = username => `${username}@${SYNTH_DOMAIN}`;
 const usernameOk = u => /^[a-z0-9][a-z0-9._-]{2,19}$/.test(u);
 const inviteFromUrl = () => {
@@ -796,7 +797,12 @@ async function signInOrCreate() {
   setAuthStatus(creating ? 'Creating your account…' : 'Signing in…', '');
   try {
     const credentials = { email: synthEmail(username), password };
-    const { error } = creating ? await sb.auth.signUp(credentials) : await sb.auth.signInWithPassword(credentials);
+    let { error } = creating ? await sb.auth.signUp(credentials) : await sb.auth.signInWithPassword(credentials);
+    if (error && !creating && /invalid login credentials/i.test(error.message || '')) {
+      // An account made before the domain changed still lives under the old one.
+      const legacy = await sb.auth.signInWithPassword({ email: `${username}@${LEGACY_DOMAIN}`, password });
+      if (!legacy.error) error = null;
+    }
     if (error) throw error;
     $('#password').value = '';
     saved.set('lastUsername', username);
