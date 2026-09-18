@@ -139,7 +139,39 @@ textarea { resize: vertical; min-height: 64px; font: inherit; }
 .session-body { display: grid; gap: 12px; padding: 0 12px 12px; }
 .new-store { display: grid; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: var(--radius); }
 .two-up { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem; gap: 10px; }
+.three-up { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem 6rem; gap: 10px; }
 .optional { font-weight: 400; color: var(--muted); }
+.store-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.small { min-height: 38px; padding: 6px 12px; font-size: 0.8125rem; }
+.store-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 17rem; overflow-y: auto; }
+.store-item {
+  width: 100%; text-align: left; display: grid; gap: 2px; padding: 8px 12px; min-height: 46px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+}
+.store-item[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: var(--accent-soft); }
+.store-name { font-size: 0.9375rem; font-weight: 600; }
+.store-meta { font-size: 0.75rem; color: var(--muted); }
+
+/* Capture preview and the check-before-saving step ---------------------- */
+.preview { display: grid; gap: 8px; padding: 10px 0 4px; }
+.preview-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+.preview-shot { display: grid; gap: 2px; }
+.preview-shot img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--line); }
+.preview-shot .cap { font-size: 0.6875rem; color: var(--muted); }
+.preview-shot[data-flagged="true"] img { border-color: var(--warn); border-width: 2px; }
+.preview-fields { display: grid; gap: 2px; font-size: 0.8125rem; color: var(--muted); }
+.preview-fields b { color: var(--ink); font-weight: 600; }
+
+.review { position: fixed; inset: 0; z-index: 20; background: rgba(6, 8, 7, 0.72); display: grid; align-items: end; }
+.review-card {
+  background: var(--surface); border-top: 2px solid var(--ink); border-radius: var(--radius) var(--radius) 0 0;
+  padding: 14px 14px max(14px, env(safe-area-inset-bottom)); display: grid; gap: 12px;
+  max-height: 88vh; overflow-y: auto; width: 100%; max-width: 36rem; margin-inline: auto;
+}
+.review-card h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.warnings { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.8125rem; }
+.warnings li { padding: 8px 10px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); }
+.warnings li[data-tone="ok"] { background: var(--ok-soft); color: var(--ok); }
 
 /* Study Facts panel — set like a Nutrition Facts label ---------------- */
 .facts { background: var(--surface); border: 2px solid var(--ink); padding: 4px 10px 8px; }
@@ -334,9 +366,15 @@ fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; g
         <span class="edit">Change</span>
       </summary>
       <div class="session-body">
-        <label class="field" for="storeSelect">Store you’re in
-          <select id="storeSelect" class="text-input"></select>
+        <label class="field" for="storeSearch">Find your store
+          <input id="storeSearch" class="text-input" type="search" inputmode="search" autocomplete="off" placeholder="Name, town or ZIP">
         </label>
+        <div class="store-actions">
+          <button type="button" class="btn btn-quiet small" id="nearMeBtn">Sort by distance</button>
+          <button type="button" class="btn btn-quiet small" id="newStoreBtn">+ Add a new store</button>
+        </div>
+        <p id="storeListStatus" class="hint"></p>
+        <ul id="storeList" class="store-list"></ul>
         <div id="newStore" class="new-store" hidden>
           <p class="hint">Everyone uses the same format, so one shop can’t be added twice under different names. Write the name as it appears on the sign.</p>
           <label class="field" for="storeChain">Chain or shop name
@@ -346,12 +384,15 @@ fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; g
           <label class="field" for="storeStreet">Street <span class="optional">optional, but tells two branches apart</span>
             <input id="storeStreet" class="text-input" type="text" maxlength="60" autocomplete="off" placeholder="100 W Main St">
           </label>
-          <div class="two-up">
+          <div class="three-up">
             <label class="field" for="storeTown">Town
               <input id="storeTown" class="text-input" type="text" maxlength="40" autocomplete="off" list="townList" placeholder="Lansdale">
             </label>
             <label class="field" for="storeState">State
               <input id="storeState" class="text-input" type="text" maxlength="2" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="PA">
+            </label>
+            <label class="field" for="storeZip">ZIP
+              <input id="storeZip" class="text-input" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="19446">
             </label>
           </div>
           <datalist id="townList"></datalist>
@@ -362,6 +403,7 @@ fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; g
             <legend>Store type</legend>
           </fieldset>
           <p id="storePreview" class="status" aria-live="polite"></p>
+          <p class="protocol">Adding a store also records where you are, if your phone allows it, so others can find it by distance. Nothing about your location is recorded on captures.</p>
           <button type="button" class="btn btn-quiet" id="addStoreBtn">Add store</button>
         </div>
         <p class="hint">Capturing as <strong id="meName"></strong> <span id="meAccount"></span></p>
@@ -444,6 +486,18 @@ fieldset.bare { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; g
       <ol id="logList" class="log-list"></ol>
       <button type="button" class="link more-btn" id="moreBtn" hidden></button>
     </section>
+  </div>
+</div>
+<div id="reviewPanel" class="review" hidden role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+  <div class="review-card">
+    <h2 id="reviewTitle">Check before saving</h2>
+    <p id="reviewSummary" class="preview-fields"></p>
+    <div id="reviewPhotos" class="preview-photos"></div>
+    <ul id="reviewWarnings" class="warnings"></ul>
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="confirmSaveBtn">Yes, save it</button>
+      <button type="button" class="btn btn-quiet" id="backToFormBtn">Go back</button>
+    </div>
   </div>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -576,6 +630,52 @@ function rotated(canvas) {
 const toJpeg = (canvas, quality) => new Promise((resolve, reject) =>
   canvas.toBlob(b => (b ? resolve(b) : reject(new Error('compress'))), 'image/jpeg', quality));
 
+// Rough legibility check: brightness, and Laplacian variance as a sharpness proxy.
+// A label photo that fails these is usually unreadable at transcription time.
+function imageQuality(canvas) {
+  const w = Math.min(320, canvas.width);
+  const h = Math.max(1, Math.round(canvas.height * (w / canvas.width)));
+  const small = document.createElement('canvas');
+  small.width = w;
+  small.height = h;
+  const ctx = small.getContext('2d');
+  ctx.drawImage(canvas, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+  const gray = new Float32Array(w * h);
+  let sum = 0;
+  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+    gray[j] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    sum += gray[j];
+  }
+  let lapSum = 0, lapSq = 0, n = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const lap = 4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - w] - gray[i + w];
+      lapSum += lap;
+      lapSq += lap * lap;
+      n++;
+    }
+  }
+  const mean = lapSum / Math.max(1, n);
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    brightness: Math.round(sum / gray.length),
+    sharpness: Math.round(lapSq / Math.max(1, n) - mean * mean),
+  };
+}
+// Thresholds measured on rendered label panels: a sharp one scores tens of thousands,
+// a badly blurred one about 100. Glare isn't checked: a genuinely sparse white label
+// is indistinguishable from it by any whole-image measure, so it would only cry wolf.
+function photoWarning(quality) {
+  if (!quality) return '';
+  if (quality.sharpness < 400) return 'looks blurry';
+  if (quality.brightness < 60) return 'very dark';
+  if (quality.width < 700) return 'low resolution';
+  return '';
+}
+
 async function decodeBarcode(canvas) {
   if ('BarcodeDetector' in window) {
     try {
@@ -640,7 +740,41 @@ const state = {
   me: null, stores: new Map(), collectors: new Map(), remote: new Map(), queue: new Map(),
   syncing: false, attempted: false, shown: PAGE, view: saved.get('view') === 'everyone' ? 'everyone' : 'mine',
   excluding: null, discarding: null, addingStore: false, lookupAttempts: new Map(), started: false,
+  search: '', here: null, open: null, previewUrls: new Map(), review: false,
 };
+
+/* Location ---------------------------------------------------------------- */
+function currentPosition(ms = 8000) {
+  if (!navigator.geolocation) return Promise.resolve(null);
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => { if (!settled) { settled = true; resolve(value); } };
+    navigator.geolocation.getCurrentPosition(
+      p => finish({ lat: Number(p.coords.latitude.toFixed(5)), lon: Number(p.coords.longitude.toFixed(5)) }),
+      () => finish(null),
+      { enableHighAccuracy: false, timeout: ms, maximumAge: 300000 });
+    setTimeout(() => finish(null), ms + 500);
+  });
+}
+function milesBetween(a, b) {
+  const toRad = d => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 7917.5 * Math.asin(Math.min(1, Math.sqrt(h))) / 2;
+}
+const storeDistance = store =>
+  state.here && store.lat != null && store.lon != null ? milesBetween(state.here, store) : null;
+
+async function sortByDistance() {
+  if (!navigator.geolocation) { toast('This phone can’t share its location.'); return; }
+  toast('Finding you…');
+  const here = await currentPosition();
+  if (!here) { toast('Location not shared. Search by name or ZIP instead.'); return; }
+  state.here = here;
+  render();
+  toast('Sorted by distance');
+}
 const blankForm = () => ({
   startedAt: null, upc: '', upcFormat: null, upcSource: null, decodeFailed: false,
   category: null, storeBrand: false, freeFrom: false, notes: '',
@@ -899,15 +1033,17 @@ function buildApp() {
       h('input', { type: 'radio', name: 'newStoreType', id: 'storeType-' + id, value: id, class: 'vh' }),
       h('span', { text: label })));
   }
-  $('#storeSelect').addEventListener('change', e => {
-    const value = e.target.value;
-    state.addingStore = value === '__new';
-    if (!state.addingStore) { session.storeId = value; saveSession(); }
+  $('#storeSearch').addEventListener('input', e => { state.search = e.target.value; render(); });
+  $('#nearMeBtn').addEventListener('click', sortByDistance);
+  $('#newStoreBtn').addEventListener('click', () => {
+    state.addingStore = !state.addingStore;
     render();
     if (state.addingStore) $('#storeChain').focus();
   });
+  $('#confirmSaveBtn').addEventListener('click', saveCapture);
+  $('#backToFormBtn').addEventListener('click', () => { state.review = false; render(); });
   $('#addStoreBtn').addEventListener('click', addStore);
-  for (const id of ['storeChain', 'storeStreet', 'storeTown', 'storeState', 'storeNumber']) {
+  for (const id of ['storeChain', 'storeStreet', 'storeTown', 'storeState', 'storeNumber', 'storeZip']) {
     $('#' + id).addEventListener('input', e => {
       if (id === 'storeState') e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
       renderStorePreview();
@@ -995,7 +1131,13 @@ async function showApp() {
 
 /* Stores ------------------------------------------------------------------ */
 async function pushStore(store) {
-  const { error } = await sb.from('stores').insert({ id: store.id, name: store.name, store_type: store.store_type });
+  const row = { id: store.id, name: store.name, store_type: store.store_type };
+  const located = { ...row, zip: store.zip || null, lat: store.lat ?? null, lon: store.lon ?? null };
+  let { error } = await sb.from('stores').insert(located);
+  // A project that hasn't run the location migration yet has no zip/lat/lon columns.
+  if (error && /column|schema cache|PGRST204/i.test(`${error.code} ${error.message}`)) {
+    ({ error } = await sb.from('stores').insert(row));
+  }
   if (error && error.code !== '23505') throw error;
   pendingStores.delete(store.id);
   savePendingStores();
@@ -1021,6 +1163,7 @@ function newStoreFields() {
     town: titleCase(tidy($('#storeTown').value)),
     state: $('#storeState').value.trim().toUpperCase(),
     number: $('#storeNumber').value.replace(/[^0-9A-Za-z-]/g, ''),
+    zip: $('#storeZip').value.replace(/\D/g, '').slice(0, 5),
   };
 }
 function renderStorePreview() {
@@ -1035,12 +1178,13 @@ function renderStorePreview() {
   preview.textContent = 'Adds as: ' + composeStoreName(f);
 }
 
-function addStore() {
+async function addStore() {
   const f = newStoreFields();
   const type = document.querySelector('input[name="newStoreType"]:checked');
   if (f.chain.length < 2) return toast('Enter the chain or shop name.');
   if (f.town.length < 2) return toast('Enter the town.');
   if (!/^[A-Z]{2}$/.test(f.state)) return toast('Enter the two-letter state, like PA.');
+  if (f.zip && f.zip.length !== 5) return toast('A ZIP code is five digits, or leave it blank.');
   if (!type) return toast('Choose the store type.');
 
   // Reuse the spelling of a chain someone already added, so CVS and cvs stay one chain.
@@ -1060,15 +1204,22 @@ function addStore() {
       toast(`There’s already a ${fields.chain} in ${fields.town} ${fields.state}. Add the store number or street, or pick it from the list.`);
       return;
     }
-    const store = { id: uuid(), name, store_type: type.value };
+    const store = { id: uuid(), name, store_type: type.value, zip: fields.zip || '' };
     pendingStores.set(store.id, store);
     savePendingStores();
     session.storeId = store.id;
     toast('Store added');
+    const here = await currentPosition();
+    if (here) {
+      Object.assign(store, here);
+      state.here = here;
+      pendingStores.set(store.id, store);
+      savePendingStores();
+    }
     if (navigator.onLine) pushStore(store).then(render).catch(() => {});
   }
   state.addingStore = false;
-  for (const id of ['storeChain', 'storeStreet', 'storeTown', 'storeState', 'storeNumber']) $('#' + id).value = '';
+  for (const id of ['storeChain', 'storeStreet', 'storeTown', 'storeState', 'storeNumber', 'storeZip']) $('#' + id).value = '';
   type.checked = false;
   saveSession();
   render();
@@ -1094,8 +1245,9 @@ async function onPhoto(slot, file) {
   try {
     const { img, url } = await loadImage(file);
     try {
-      const blob = await toJpeg(drawScaled(img, slot.maxEdge), slot.quality);
-      setPhoto(slot.id, { status: 'photo', blob, url: URL.createObjectURL(blob) });
+      const canvas = drawScaled(img, slot.maxEdge);
+      const blob = await toJpeg(canvas, slot.quality);
+      setPhoto(slot.id, { status: 'photo', blob, url: URL.createObjectURL(blob), quality: imageQuality(canvas) });
       if (slot.id === 'barcode') {
         const hit = await decodeBarcode(drawScaled(img, 1280));
         if (hit) {
@@ -1141,7 +1293,7 @@ function resetForm() {
   state.attempted = false;
 }
 
-async function onSave(event) {
+function onSave(event) {
   event.preventDefault();
   if (checklist().some(([, done]) => !done)) {
     state.attempted = true;
@@ -1150,6 +1302,12 @@ async function onSave(event) {
     toast('Finish the unticked items first.');
     return;
   }
+  state.review = true;   // nothing is sent until the photos have been looked at
+  render();
+}
+
+async function saveCapture() {
+  state.review = false;
   const now = new Date();
   const code = classifyCode(form.upc, form.upcFormat);
   const id = 'c' + now.getTime().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1165,7 +1323,9 @@ async function onSave(event) {
   };
   const blobs = {};
   for (const [slot, value] of Object.entries(form.photos)) {
-    record.photos[slot] = { status: value.status };
+    record.photos[slot] = value.status === 'photo'
+      ? { status: 'photo', quality: value.quality || null }
+      : { status: value.status };
     if (value.status === 'photo') blobs[slot] = value.blob;
   }
   const item = { id, record, blobs, paths: {}, status: 'queued', error: '', createdAt: now.getTime() };
@@ -1184,7 +1344,7 @@ function captureRow(item) {
   const r = item.record;
   const photos = {};
   for (const [slot, p] of Object.entries(r.photos)) {
-    photos[slot] = p.status === 'photo' ? { status: 'photo', path: item.paths[slot] } : p;
+    photos[slot] = p.status === 'photo' ? { ...p, path: item.paths[slot] } : p;
   }
   return {
     id: r.id, store_id: r.store_id, upc: r.upc, upc_format: r.upc_format, upc_source: r.upc_source, gtin14: r.gtin14,
@@ -1344,12 +1504,99 @@ async function setExcluded(id, reason) {
   render();
 }
 
+/* Preview and confirmation ------------------------------------------------ */
+async function openPreview(id) {
+  state.open = state.open === id ? null : id;
+  render();
+  if (!state.open || state.previewUrls.has(id)) return;
+  const record = allRecords().find(r => r._id === id);
+  if (!record) return;
+  const urls = {};
+  const queued = state.queue.get(id);
+  if (queued) {
+    for (const [slot, blob] of Object.entries(queued.blobs)) urls[slot] = URL.createObjectURL(blob);
+  } else if (sb) {
+    const entries = Object.entries(record.photos || {}).filter(([, p]) => p && p.status === 'photo' && p.path);
+    if (entries.length) {
+      try {
+        const { data } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(entries.map(([, p]) => p.path), 3600);
+        (data || []).forEach((row, i) => { if (row && row.signedUrl) urls[entries[i][0]] = row.signedUrl; });
+      } catch {}
+    }
+  }
+  state.previewUrls.set(id, urls);
+  render();
+}
+
+function renderPreviewBlock(r) {
+  const urls = state.previewUrls.get(r._id) || {};
+  const slots = SLOTS.map(s => [s, (r.photos || {})[s.id]]).filter(([, p]) => p);
+  const store = storeById(r.store_id);
+  const shots = slots.filter(([, p]) => p.status === 'photo');
+  const answers = slots.filter(([, p]) => p.status !== 'photo');
+  return h('div', { class: 'preview' },
+    h('div', { class: 'preview-photos' }, ...shots.map(([slot, p]) => {
+      const url = urls[slot.id];
+      const warning = photoWarning(p.quality);
+      return h('div', { class: 'preview-shot', 'data-flagged': String(Boolean(warning)) },
+        url
+          ? h('a', { href: url, target: '_blank', rel: 'noopener' }, h('img', { src: url, alt: slot.label, loading: 'lazy' }))
+          : h('span', { class: 'cap', text: 'loading…' }),
+        h('span', { class: 'cap', text: warning ? `${slot.label} — ${warning}` : slot.label }));
+    })),
+    h('div', { class: 'preview-fields' },
+      h('div', {}, h('b', { text: 'Barcode ' }), r.upc),
+      h('div', {}, h('b', { text: 'Stratum ' }), stratumLabel(r.category)),
+      h('div', {}, h('b', { text: 'Store ' }), store ? store.name : '—'),
+      h('div', {}, h('b', { text: 'Captured ' }), new Date(r.captured_at).toLocaleString()),
+      Number.isFinite(r.seconds_to_capture) ? h('div', {}, h('b', { text: 'Took ' }), `${r.seconds_to_capture} s`) : null,
+      h('div', {}, h('b', { text: 'Lookups ' }), (r.snapshots || []).length >= 2
+        ? 'both databases saved'
+        : `${(r.snapshots || []).length} of 2 saved`),
+      r.notes ? h('div', {}, h('b', { text: 'Note ' }), r.notes) : null,
+      ...answers.map(([slot, p]) => h('div', {}, h('b', { text: slot.label + ' ' }),
+        (slot.alts.find(a => a[0] === p.status) || [, p.status])[1]))));
+}
+
+function renderReview() {
+  const panel = $('#reviewPanel');
+  panel.hidden = !state.review;
+  if (!state.review) return;
+  const code = classifyCode(form.upc, form.upcFormat);
+  const store = storeById(session.storeId);
+  $('#reviewSummary').replaceChildren(
+    h('div', {}, h('b', { text: 'Barcode ' }), `${form.upc} (${code.label || 'typed'})`),
+    h('div', {}, h('b', { text: 'Stratum ' }), stratumLabel(form.category)),
+    h('div', {}, h('b', { text: 'Store ' }), store ? store.name : '—'),
+    form.storeBrand ? h('div', {}, h('b', { text: 'Store brand ' }), 'yes') : null,
+    form.freeFrom ? h('div', {}, h('b', { text: 'Free-from claim ' }), 'yes') : null,
+    form.notes.trim() ? h('div', {}, h('b', { text: 'Note ' }), form.notes.trim()) : null);
+
+  const slots = SLOTS.map(slot => [slot, form.photos[slot.id]]).filter(([, v]) => v);
+  $('#reviewPhotos').replaceChildren(...slots.filter(([, v]) => v.status === 'photo').map(([slot, v]) => {
+    const warning = photoWarning(v.quality);
+    return h('div', { class: 'preview-shot', 'data-flagged': String(Boolean(warning)) },
+      h('img', { src: v.url, alt: slot.label }),
+      h('span', { class: 'cap', text: warning ? `${slot.label} — ${warning}` : slot.label }));
+  }));
+
+  const problems = slots
+    .filter(([, v]) => v.status === 'photo' && photoWarning(v.quality))
+    .map(([slot, v]) => h('li', { text: `${slot.label}: ${photoWarning(v.quality)}. Go back and retake it if you can.` }));
+  const answered = slots.filter(([, v]) => v.status !== 'photo').map(([slot, v]) =>
+    h('li', { 'data-tone': 'ok', text: `${slot.label}: ${(slot.alts.find(a => a[0] === v.status) || [, v.status])[1]}` }));
+  $('#reviewWarnings').replaceChildren(
+    ...(problems.length ? problems : [h('li', { 'data-tone': 'ok', text: 'Every photo looks legible.' })]),
+    ...answered);
+}
+
 /* Render ---------------------------------------------------------------- */
 function render() {
   if (!state.me) return;
   const records = allRecords();
   const firsts = firstCaptures(records);
   renderSession();
+  renderReview();
   renderFacts(records, firsts);
   renderForm(records, firsts);
   renderLog(records, firsts);
@@ -1364,17 +1611,8 @@ function renderSession() {
   $('#meName').textContent = state.me.name;
   $('#meAccount').textContent = state.me.account ? `(${state.me.account})` : '';
 
-  const select = $('#storeSelect');
   const stores = allStores();
-  const key = JSON.stringify([stores.map(s => [s.id, s.name, s.store_type, Boolean(s.pending)]), session.storeId, state.addingStore]);
-  if (select.dataset.key !== key) {
-    select.dataset.key = key;
-    select.replaceChildren(
-      h('option', { value: '', text: stores.length ? 'Choose a store…' : 'No stores yet. Add one below.' }),
-      ...stores.map(s => h('option', { value: s.id, text: `${s.name} · ${storeTypeLabel(s.store_type)}${s.pending ? ' (not uploaded yet)' : ''}` })),
-      h('option', { value: '__new', text: '+ Add a new store' }));
-    select.value = state.addingStore ? '__new' : (store ? session.storeId : '');
-  }
+  renderStoreList(stores);
   $('#newStore').hidden = !state.addingStore;
   if (state.addingStore) {
     const parts = stores.map(s => storeParts(s.name));
@@ -1389,6 +1627,41 @@ function renderSession() {
     fill('townList', parts.map(p => p.town));
     renderStorePreview();
   }
+}
+
+function renderStoreList(stores) {
+  const term = state.search.trim().toLowerCase();
+  let list = stores.map(s => ({ ...s, distance: storeDistance(s) }));
+  if (term) list = list.filter(s => `${s.name} ${s.zip || ''}`.toLowerCase().includes(term));
+  list.sort((a, b) => {
+    if (state.here && (a.distance == null) !== (b.distance == null)) return a.distance == null ? 1 : -1;
+    if (state.here && a.distance != null && b.distance != null) return a.distance - b.distance;
+    return a.name.localeCompare(b.name);
+  });
+  const shown = term ? list : list.slice(0, 8);
+  $('#storeList').replaceChildren(...shown.map(s => h('li', {},
+    h('button', {
+      type: 'button', class: 'store-item', 'aria-pressed': String(s.id === session.storeId),
+      onclick: () => {
+        session.storeId = s.id;
+        state.addingStore = false;
+        saveSession();
+        render();
+        toast('Store set: ' + s.name);
+      },
+    },
+      h('span', { class: 'store-name', text: s.name }),
+      h('span', {
+        class: 'store-meta',
+        text: [storeTypeLabel(s.store_type), s.zip || null,
+          s.distance != null ? `${s.distance < 10 ? s.distance.toFixed(1) : Math.round(s.distance)} mi away` : null,
+          s.pending ? 'not uploaded yet' : null].filter(Boolean).join(' · '),
+      })))));
+  const status = $('#storeListStatus');
+  if (!stores.length) status.textContent = 'No stores yet. Add the one you’re standing in.';
+  else if (term && !list.length) status.textContent = 'Nothing matches. Check the spelling, or add the store.';
+  else if (!term && list.length > shown.length) status.textContent = `Showing ${shown.length} of ${list.length}. Search by name, town or ZIP.`;
+  else status.textContent = state.here ? 'Closest first.' : '';
 }
 
 function renderFacts(records, firsts) {
@@ -1489,7 +1762,10 @@ function renderLog(records, firsts) {
         state.view === 'everyone' ? (mine ? 'You' : state.collectors.get(r.collector_id) || 'Someone') : null,
         time, `${photos} photo${photos === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
 
-      const actions = [];
+      const actions = [h('button', {
+        type: 'button', class: 'link', text: state.open === r._id ? 'Hide' : 'Preview',
+        onclick: () => openPreview(r._id),
+      })];
       if (r._sync === 'synced' && mine) {
         if (r.excluded) actions.push(h('button', { type: 'button', class: 'link', text: 'Restore', onclick: () => setExcluded(r._id, '') }));
         else if (state.excluding === r._id) {
@@ -1518,7 +1794,8 @@ function renderLog(records, firsts) {
         h('div', { class: 'log-meta', text: meta }),
         r.excluded && r.exclude_reason ? h('div', { class: 'log-meta', text: 'Excluded: ' + r.exclude_reason }) : null,
         r._error && r._sync !== 'synced' ? h('div', { class: 'log-error', text: r._error }) : null,
-        actions.length ? h('div', { class: 'log-actions' }, ...actions) : null);
+        actions.length ? h('div', { class: 'log-actions' }, ...actions) : null,
+        state.open === r._id ? renderPreviewBlock(r) : null);
     }));
   }
   const more = $('#moreBtn');
