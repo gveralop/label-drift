@@ -761,7 +761,7 @@ const state = {
   me: null, stores: new Map(), collectors: new Map(), remote: new Map(), queue: new Map(),
   syncing: false, attempted: false, shown: PAGE, view: saved.get('view') === 'everyone' ? 'everyone' : 'mine',
   excluding: null, discarding: null, addingStore: false, lookupAttempts: new Map(), started: false,
-  search: '', here: null, open: null, previewUrls: new Map(), review: false,
+  search: '', here: null, open: null, previewUrls: new Map(), review: false, lookupResults: new Map(),
 };
 
 /* Location ---------------------------------------------------------------- */
@@ -1442,21 +1442,35 @@ async function sync() {
 }
 
 // Ask the server to snapshot FoodData Central and Open Food Facts for a capture.
-async function requestLookup(id) {
+// A failure is kept and shown in the capture's preview, so a lookup that never
+// lands says why instead of sitting on "pending" forever.
+async function requestLookup(id, { force = false } = {}) {
   const last = state.lookupAttempts.get(id) || 0;
-  if (Date.now() - last < LOOKUP_RETRY_MS || !navigator.onLine) return;
+  if ((!force && Date.now() - last < LOOKUP_RETRY_MS) || !navigator.onLine) return;
   state.lookupAttempts.set(id, Date.now());
   try {
     const { data, error } = await sb.functions.invoke('lookup', { body: { capture_id: id } });
-    if (error || !data || !data.results) return;
+    let results = data && data.results;
+    if (!results && error && error.context && typeof error.context.json === 'function') {
+      try { results = (await error.context.json()).results; } catch {}
+    }
+    if (!results) {
+      state.lookupResults.set(id, { error: (error && error.message) || 'no answer from the lookup service' });
+      render();
+      return;
+    }
+    state.lookupResults.set(id, results);
     const row = state.remote.get(id);
     if (row) {
-      row.snapshots = Object.entries(data.results)
+      row.snapshots = Object.entries(results)
         .filter(([, v]) => !String(v).startsWith('failed') && v !== 'save failed')
         .map(([source]) => ({ source }));
-      render();
     }
-  } catch {}
+    render();
+  } catch (err) {
+    state.lookupResults.set(id, { error: (err && err.message) || 'lookup failed' });
+    render();
+  }
 }
 
 async function refresh() {
@@ -1493,7 +1507,9 @@ async function refresh() {
     }
   }
   render();
-  const cutoff = Date.now() - 20 * 60 * 60 * 1000;
+  // Keep trying for a week: a lookup that failed on a bad signal or a rate limit
+  // is still worth saving, and the capture date is what the analysis uses.
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   for (const c of captures.data) {
     if (c.collector_id === state.me.uid && !c.excluded && (c.snapshots || []).length < 2 && Date.parse(c.captured_at) > cutoff) {
       requestLookup(c.id);
@@ -1582,6 +1598,27 @@ async function openPreview(id) {
   render();
 }
 
+const SOURCE_NAMES = { fdc: 'FoodData Central', off: 'Open Food Facts' };
+// What the lookup service said last time, plus a way to ask it again.
+function lookupDetail(r) {
+  const rows = [];
+  const results = state.lookupResults.get(r._id);
+  if (results && results.error) {
+    rows.push(h('div', {}, h('b', { text: 'Lookup problem ' }), results.error));
+  } else if (results) {
+    for (const [source, outcome] of Object.entries(results)) {
+      rows.push(h('div', {}, h('b', { text: (SOURCE_NAMES[source] || source) + ' ' }), String(outcome)));
+    }
+  }
+  if (r._sync === 'synced' && !r.excluded && (r.snapshots || []).length < 2) {
+    rows.push(h('button', {
+      type: 'button', class: 'link', text: 'Look it up again now',
+      onclick: () => { toast('Asking both databases…'); requestLookup(r._id, { force: true }); },
+    }));
+  }
+  return rows;
+}
+
 function renderPreviewBlock(r) {
   const urls = state.previewUrls.get(r._id) || {};
   const slots = SLOTS.map(s => [s, (r.photos || {})[s.id]]).filter(([, p]) => p);
@@ -1600,6 +1637,7 @@ function renderPreviewBlock(r) {
       h('div', {}, h('b', { text: 'Lookups ' }), (r.snapshots || []).length >= 2
         ? 'both databases saved'
         : `${(r.snapshots || []).length} of 2 saved`),
+      ...lookupDetail(r),
       r.notes ? h('div', {}, h('b', { text: 'Note ' }), r.notes) : null,
       ...answers.map(([slot, p]) => h('div', {}, h('b', { text: slot.label + ' ' }),
         (slot.alts.find(a => a[0] === p.status) || [, p.status])[1]))));
